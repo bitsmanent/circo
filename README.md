@@ -3,7 +3,7 @@ Hello
 circo is a small IRC client for the terminal. It provides a list of views to
 differentiate between channels, users, and other messages. Each buffer has its
 own input text while other relevant informations such as server and nickname
-are always visible the top.
+are always visible at the top.
 
 Status
 ======
