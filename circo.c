@@ -1,0 +1,737 @@
+/* claudio's IRC oasis */
+
+#include <ctype.h>
+#include <errno.h>
+#include <locale.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <signal.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/ioctl.h>
+#include <sys/select.h>
+#include <sys/socket.h>
+#include <termios.h>
+#include <unistd.h>
+
+#include "arg.h"
+char *argv0;
+
+/* macros */
+#define LENGTH(X)	(sizeof X / sizeof X[0])
+
+/* VT100 escape sequences */
+#define CLEAR           "\33[2J"
+#define CLEARLN         "\33[2K"
+#define CLEARRIGHT      "\33[0K"
+#define CURPOS          "\33[%d;%dH"
+#define CURSON          "\33[?25h"
+#define CURSOFF         "\33[?25l"
+
+/* enums */
+enum { KeyUp = -50, KeyDown, KeyRight, KeyLeft, KeyHome, KeyEnd, KeyDel, KeyPgUp, KeyPgDw };
+
+typedef union {
+	int i;
+	unsigned int ui;
+	float f;
+	const void *v;
+} Arg;
+
+typedef struct {
+	char text[512];
+	int len;
+} Text;
+
+typedef struct Buffer Buffer;
+struct Buffer {
+	Text *texts;
+	char name[256];
+	char cmd[512];
+	int cmdlen;
+	int txtsz;
+	int ntxt;
+	int offy;
+	Buffer *next;
+};
+
+typedef struct {
+	char *name;
+	void (*func)(char *);
+} Command;
+
+typedef struct {
+	const int key;
+	void (*func)(const Arg *);
+	const Arg arg;
+} Key;
+
+void attach(Buffer *b);
+void cleanup(void);
+void detach(Buffer *b);
+int dial(char *host, char *port);
+void die(const char *errstr, ...);
+void draw(void);
+void drawbar(void);
+void drawbuf(void);
+void drawcmdln(void);
+void *ecalloc(size_t nmemb, size_t size);
+void editor_clear(const Arg *arg);
+Buffer *getbuf(char *name);
+void focusnext(const Arg *arg);
+void focusprev(const Arg *arg);
+int getkey(void);
+void logw(char *txt);
+void msg(char *s);
+int mvprintf(int x, int y, char *fmt, ...);
+Buffer *newbuf(char *name);
+void parsecmd(void);
+void parsesrv(void);
+int printb(Buffer *b, char *fmt, ...);
+void quit(char *s);
+void resize(int x, int y);
+void scroll(const Arg *arg);
+void server(char *s);
+void setup(void);
+void sigwinch(int unused);
+char *skip(char *s, char c);
+void sout(char *fmt, ...);
+void trim(char *s);
+void usage(void);
+void usrin(void);
+
+/* variables */
+FILE *srv, *logp;
+Buffer *buffers, *sel;
+struct termios origti;
+int running = 1;
+int rows, cols;
+
+char *host = "irc.freenode.org";
+char *port = "6667";
+char logfile[64] = "/tmp/circo.log";
+char nick[32];
+
+
+/* configuration, allows nested code to access above variables */
+#include "config.h"
+
+/* function implementations */
+void
+attach(Buffer *b) {
+	b->next = buffers;
+	buffers = b;
+}
+
+void
+cleanup(void) {
+	Buffer *b;
+
+	while(buffers) {
+		b = buffers;
+		buffers = buffers->next;
+		free(b->texts);
+		free(b);
+	}
+	tcsetattr(0, TCSANOW, &origti);
+}
+
+void
+detach(Buffer *b) {
+	Buffer **tb;
+
+	for (tb = &buffers; *tb && *tb != b; tb = &(*tb)->next);
+	*tb = b->next;
+}
+
+int
+dial(char *host, char *port) {
+	static struct addrinfo hints;
+	struct addrinfo *res, *r;
+	int srvfd;
+
+	memset(&hints, 0, sizeof hints);
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_STREAM;
+	if(getaddrinfo(host, port, &hints, &res) != 0)
+		die("error: cannot resolve hostname '%s':", host);
+	for(r = res; r; r = r->ai_next) {
+		if((srvfd = socket(r->ai_family, r->ai_socktype, r->ai_protocol)) == -1)
+			continue;
+		if(connect(srvfd, r->ai_addr, r->ai_addrlen) == 0)
+			break;
+		close(srvfd);
+	}
+	freeaddrinfo(res);
+	if(!r)
+		die("error: cannot connect to host '%s'\n", host);
+	return srvfd;
+}
+
+void
+die(const char *errstr, ...) {
+	va_list ap;
+
+	va_start(ap, errstr);
+	vfprintf(stderr, errstr, ap);
+	va_end(ap);
+	exit(1);
+}
+
+void
+draw(void) {
+	drawbuf();
+	drawbar();
+	drawcmdln();
+}
+
+void
+drawbar(void) {
+	mvprintf(1, 1, "%s@%s:%s - %s%s",
+		srv ? nick : "", srv ? host : "", srv ? port : "",
+		sel->name, CLEARRIGHT);
+}
+
+void
+drawbuf(void) {
+	Text txt;
+	int x, y, i, j;
+
+	printf(CURSOFF);
+	y = rows - 1;
+	for(i = sel->ntxt - 1 - sel->offy; i >= 0 && y > 1; --i) {
+		txt = sel->texts[i];
+		x = 1;
+		if(txt.len < cols - 1) {
+			mvprintf(x, y, "%s", CLEARLN);
+			x += mvprintf(x, y, "%s", txt.text);
+		}
+		else {
+			y -= txt.len / cols;
+			for(j = 0; j < txt.len && i > 1; ++j) {
+				if(x >= cols - 1) {
+					++y;
+					x = 1;
+				}
+				x += mvprintf(x, y, "%c", txt.text[j]);
+			}
+			x += mvprintf(x, y, "%s", CLEARRIGHT);
+			y -= txt.len / cols;
+		}
+		--y;
+	}
+	while(--y > 1)
+		mvprintf(1, y, "%s", CLEARLN);
+	printf(CURSON);
+}
+
+void
+drawcmdln(void) {
+	int pslen = 4 + strlen(sel->name); /* 1 for the cursor */
+	int cmdsz = cols  - pslen;
+	int i = sel->cmdlen > cmdsz ? sel->cmdlen - cmdsz : 0;
+
+	mvprintf(1, rows, "[%s] %s%s", sel->name, &sel->cmd[i], CLEARRIGHT);
+}
+
+void *
+ecalloc(size_t nmemb, size_t size) {
+	void *p;
+
+	if(!(p = calloc(nmemb, size)))
+		die("Cannot allocate memory.\n");
+	return p;
+}
+
+void
+editor_clear(const Arg *arg) {
+	sel->cmd[0] = '\0';
+	sel->cmdlen = 0;
+	drawcmdln();
+}
+
+void
+focusnext(const Arg *arg) {
+	sel = sel->next ? sel->next : buffers;
+	draw();
+}
+
+void 
+focusprev(const Arg *arg) {
+	Buffer *b;
+
+	if(sel == buffers) {
+		for(b = buffers; b; b = b->next)
+			sel = b;
+	}
+	else {
+		for(b = buffers; b && b->next; b = b->next)
+			if(b->next == sel)
+				sel = b;
+	}
+	draw();
+}
+
+Buffer *
+getbuf(char *name) {
+	Buffer *b;
+
+	for(b = buffers; b; b = b->next)
+		if(!strcmp(b->name, name))
+			return b;
+
+	return NULL;
+}
+
+/* XXX quick'n dirty implementation */
+int
+getkey(void) {
+	int key = getchar(), c;
+
+	if(key != '\x1b' || getchar() != '[')
+		return key;
+	switch((c = getchar())) {
+	case 'A': key = KeyUp; break;
+	case 'B': key = KeyDown; break;
+	case 'C': key = KeyRight; break;
+	case 'D': key = KeyLeft; break;
+	case 'H': key = KeyHome; break;
+	case 'F': key = KeyEnd; break;
+	case '1': key = KeyHome; break;
+	case '3': key = KeyDel; break;
+	case '4': key = KeyEnd; break;
+	case '5': key = KeyPgUp; break;
+	case '6': key = KeyPgDw; break;
+	case '7': key = KeyHome; break;
+	case '8': key = KeyEnd; break;
+	default:
+		/* debug */
+		mvprintf(1, rows, "Unknown char: %c (%d)", c, c);
+		break;
+	}
+	return key;
+}
+
+void
+logw(char *txt) {
+	if(!logp)
+		return;
+	fprintf(logp, "%s\n", txt);
+	fflush(logp);
+}
+
+void
+msg(char *s) {
+	char *to, *txt;
+
+	if(!srv) {
+		printb(sel, "You're offline.");
+		return;
+	}
+	to = s;
+	txt = skip(to, ' ');
+	sout("PRIVMSG %s :%s", to, txt);
+}
+
+int
+mvprintf(int x, int y, char *fmt, ...) {
+	va_list ap;
+	int len;
+
+	printf(CURPOS, y, x);
+	va_start(ap, fmt);
+	len = vfprintf(stdout, fmt, ap);
+	va_end(ap);
+	return len;
+}
+
+Buffer *
+newbuf(char *name) {
+	Buffer *b;
+
+	b = ecalloc(1, sizeof(Buffer));
+	strncpy(b->name, name, sizeof b->name);
+	attach(b);
+	return b;
+}
+
+void
+parsecmd(void) {
+	char *p, *tp;
+	int i, len;
+
+	/* command */
+	p = &sel->cmd[1];
+	if(!*p)
+		return;
+	tp = p + 1;
+	tp = skip(p, ' ');
+	len = strlen(p);
+	for(i = 0; i < LENGTH(commands); ++i) {
+		if(!strncmp(commands[i].name, p, len)) {
+			commands[i].func(tp);
+			return;
+		}
+	}
+	if(srv) {
+		sout("%s %s", p, tp);
+		fflush(srv);
+	}
+	else {
+		printb(sel, "/%s: not connected.", p);
+	}
+}
+
+void
+parsesrv(void) {
+	Buffer *b;
+	char *cmd, *usr, *par, *txt;
+	char buf[4096]; /* XXX size */
+
+	if(fgets(buf, sizeof buf, srv) == NULL) {
+		srv = NULL;
+		printb(sel, "! Remote host closed connection");
+		draw();
+		return;
+	}
+	cmd = buf;
+	usr = host;
+	if(!cmd || !*cmd)
+		return;
+	if(cmd[0] == ':') {
+		usr = cmd + 1;
+		cmd = skip(usr, ' ');
+		if(cmd[0] == '\0')
+			return;
+		skip(usr, '!');
+	}
+	skip(cmd, '\r');
+	par = skip(cmd, ' ');
+	txt = skip(par, ':');
+	trim(txt);
+	trim(par);
+	printb(getbuf("status"), "[DEBUG] %s | %s | %s | txt:(%s)", cmd, usr, par, txt);
+	if(!strcmp("PRIVMSG", cmd)) {
+		b = getbuf(par);
+		if(!b)
+			b = newbuf(par);
+		printb(b, "%s: %s", usr, txt);
+		if(b != sel)
+			return;
+	}
+	else if(!strcmp("JOIN", cmd)) {
+		if(strcmp(usr, nick)) {
+			printb(getbuf(par), "JOIN %s (%s)", usr, txt);
+			return;
+		}
+		printb((sel = newbuf(par)), "You joined %s", par);
+	}
+	else if(!strcmp("331", cmd) || !strcmp("332", cmd)) {
+		printb(sel, "Topic on %s is %s", par, txt);
+	}
+	else if(!strcmp("TOPIC", cmd)) {
+		printb(getbuf(par), "%s has changed the topic: %s", usr, txt);
+	}
+	else if(!strcmp("QUIT", cmd)) {
+		/* XXX no channel here */
+		printb(sel, "QUIT %s (%s)", usr, txt);
+	}
+	else if(!strcmp("PART", cmd)) {
+		if(strcmp(usr, nick)) {
+			printb(getbuf(par), "PART %s (%s)", usr, txt);
+			return;
+		}
+		b = getbuf(par);
+		if(b != sel) {
+			detach(b);
+			return;
+		}
+		sel = sel->next ? sel->next : buffers;
+		detach(b);
+	}
+	else if(!strcmp("PING", cmd)) {
+		sout("PONG %s", txt);
+		return;
+	}
+	else if(!strcmp("PONG", cmd) || !strcmp("366", cmd) || !strcmp("375", cmd) || !strcmp("376", cmd))
+		return;
+	else if(!strcmp("NOTICE", cmd))
+		printb(sel, "NOTICE: %s: %s", usr, txt);
+	else if(!strcmp("MODE", cmd)) {
+		if(*nick)
+			return;
+		strcpy(nick, par);
+	}
+	else if(!strcmp("NICK", cmd)) {
+		if(strcmp(usr, nick)) {
+			/* XXX no channel here */
+			printb(sel, "NICK %s: %s", usr, txt);
+			return;
+		}
+		strcpy(nick, txt);
+		printb(sel, "Your nick is now %s", nick);
+	}
+	else if(!strcmp("437", cmd)) {
+		printb(sel, "%s is busy, choose a different /nick", nick);
+		*nick = '\0';
+	}
+	else if(!strcmp("353", cmd)) {
+		par = skip(par, '@') + 1;
+		printb(sel, "Users in %s: %s", par, txt); /* XXX par is wrong */
+	}
+	else {
+		/* XXX 470 channel forward */
+
+		if(!strcmp("372", cmd)) /* motd */
+			b = getbuf("status");
+		else
+			b = sel;
+		printb(b, "%s", txt);
+		if(b != sel)
+			return;
+	}
+	draw();
+}
+
+int
+printb(Buffer *b, char *fmt, ...) {
+	va_list ap;
+	int len;
+
+	if(!b->txtsz || b->ntxt >= b->txtsz)
+		if(!(b->texts = realloc(b->texts, (b->txtsz += 512) * sizeof(Text))))
+			die("cannot realloc\n");
+	va_start(ap, fmt);
+	len = vsprintf(b->texts[b->ntxt].text, fmt, ap);
+	va_end(ap);
+	logw(b->texts[b->ntxt].text);
+	b->texts[b->ntxt++].len = len;
+	return len;
+}
+
+void
+quit(char *s) {
+	running = 0;
+}
+
+void
+resize(int x, int y) {
+	rows = x;
+	cols = y;
+}
+
+void
+scroll(const Arg *arg) {
+	int y, n;
+
+	if(sel->ntxt < rows - 1)
+		return;
+	y = sel->offy + arg->i;
+	if(y < 0)
+		y = 0;
+	else {
+		n = sel->ntxt - rows - 1;
+		if(y > n)
+			y = n;
+	}
+	sel->offy = y;
+	draw();
+}
+
+void
+server(char *s) {
+	if(srv)
+		quit(NULL);
+	srv = fdopen(dial(host, port), "r+");
+	if(!srv)
+		die("cannot connect to server");
+	setbuf(srv, NULL);
+	sout("NICK %s", nick);
+	sout("USER %s localhost %s :%s", nick, host, nick);
+}
+
+void
+setup(void) {
+	struct termios ti;
+	struct sigaction sa;
+	struct winsize ws;
+
+	setlocale(LC_CTYPE, "");
+	sa.sa_flags = 0;
+	sigemptyset(&sa.sa_mask);
+	sa.sa_handler = sigwinch;
+	sigaction(SIGWINCH, &sa, NULL);
+	tcgetattr(0, &origti);
+	ti.c_lflag &= ~(ECHO | ICANON);
+	ti.c_iflag |= ICRNL;
+	tcsetattr(0, TCSAFLUSH, &ti);
+
+	ioctl(0, TIOCGWINSZ, &ws);
+	resize(ws.ws_row, ws.ws_col);
+}
+
+void
+sigwinch(int unused) {
+	struct winsize ws;
+
+	ioctl(0, TIOCGWINSZ, &ws);
+	resize(ws.ws_row, ws.ws_col);
+	draw();
+}
+
+char *
+skip(char *s, char c) {
+	while(*s != c && *s != '\0')
+		s++;
+	if(*s != '\0')
+		*s++ = '\0';
+	return s;
+}
+
+void
+sout(char *fmt, ...) {
+	va_list ap;
+	char buf[512];
+
+	va_start(ap, fmt);
+	vsnprintf(buf, sizeof buf, fmt, ap);
+	va_end(ap);
+	fprintf(srv, "%s\r\n", buf);
+}
+
+void
+trim(char *s) {
+	char *e;
+
+	e = s + strlen(s) - 1;
+	while(isspace(*e) && e > s)
+		e--;
+	*(e + 1) = '\0';
+}
+
+void
+usage(void) {
+	die("Usage: %s ...", argv0);
+}
+
+void
+usrin(void) {
+	int key = getkey(), iskey = 0, i;
+
+	for(i = 0; i < LENGTH(keys); ++i) {
+		if(keys[i].key == key) {
+			keys[i].func(&keys[i].arg);
+			iskey = 1;
+		}
+	}
+	if(iskey) {
+		while(getkey() != EOF); /* discard remaining input */
+		return;
+	}
+
+	if(key == '\n') {
+		logw(sel->cmd);
+		if(sel->cmd[0] == '\0')
+			return;
+		sel->cmd[sel->cmdlen] = '\0';
+
+		if(sel->cmd[0] == '/') {
+			if(sel->cmdlen == 1)
+				return;
+			parsecmd();
+		}
+		else {
+			if(!strcmp(sel->name, "status")) {
+				printb(sel, "Cannot send text here.");
+			}
+			else {
+				if(!srv) {
+					printb(sel, "You're not connected.");
+					return;
+				}
+				sout("PRIVMSG %s :%s", sel->name, sel->cmd);
+				printb(sel, "%s: %s", nick, sel->cmd);
+			}
+		}
+
+		sel->cmd[0] = '\0';
+		sel->cmdlen = 0;
+		draw();
+	}
+	else if(isgraph(key) || (key == ' ' && sel->cmdlen)) {
+		if(sel->cmdlen >= sizeof sel->cmd)
+			return;
+		sel->cmd[sel->cmdlen++] = key;
+		sel->cmd[sel->cmdlen] = '\0';
+		drawcmdln();
+	}
+}
+
+int
+main(int argc, char *argv[]) {
+	struct timeval tv;
+	fd_set rd;
+	int n, nfds;
+	const char *user = getenv("USER");
+
+	ARGBEGIN {
+	case 'h':
+		host = EARGF(usage());
+		break;
+	case 'p':
+		port = EARGF(usage());
+		break;
+	case 'n':
+		strncpy(nick, EARGF(usage()), sizeof nick);
+		break;
+	case 'l':
+		strncpy(logfile, EARGF(usage()), sizeof logfile);
+		break;
+	case 'v':
+		die("foo..");
+	default:
+		usage();
+	} ARGEND;
+
+	if(!*nick)
+		strncpy(nick, user ? user : "unknown", sizeof nick);
+	setup();
+
+	if(*logfile)
+		logp = fopen(logfile, "a");
+	sel = newbuf("status");
+	setbuf(stdout, NULL);
+	printf(CLEAR);
+	draw();
+	while(running) {
+		FD_ZERO(&rd);
+		FD_SET(0, &rd);
+		tv.tv_sec = 120;
+		tv.tv_usec = 0;
+		nfds = 0;
+		if(srv) {
+			FD_SET(fileno(srv), &rd);
+			nfds = fileno(srv);
+		}
+		n = select(nfds + 1, &rd, 0, 0, &tv);
+		if(n < 0) {
+			if(errno == EINTR)
+				continue;
+			die("circo: error on select()\n");
+		}
+		else if(n == 0) {
+			if(srv)
+				sout("PING %s", host);
+			continue;
+		}
+		if(srv && FD_ISSET(fileno(srv), &rd))
+			parsesrv();
+		if(FD_ISSET(0, &rd))
+			usrin();
+	}
+	mvprintf(1, cols, "\n");
+	cleanup();
+	return 0;
+}
