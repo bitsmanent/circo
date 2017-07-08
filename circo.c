@@ -218,8 +218,8 @@ drawbuf(void) {
 		}
 		else {
 			y -= txt.len / cols;
-			for(j = 0; j < txt.len && i > 1; ++j) {
-				if(x >= cols - 1) {
+			for(j = 0; j < txt.len && y > 1; ++j) {
+				if(x > cols) {
 					++y;
 					x = 1;
 				}
@@ -431,7 +431,7 @@ parsesrv(void) {
 	}
 	else if(!strcmp("JOIN", cmd)) {
 		if(strcmp(usr, nick)) {
-			printb(getbuf(par), "JOIN %s (%s)", usr, txt);
+			printb(getbuf(par), "JOIN %s", usr);
 			return;
 		}
 		printb((sel = newbuf(par)), "You joined %s", par);
