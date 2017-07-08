@@ -78,6 +78,9 @@ typedef struct {
 
 void attach(Buffer *b);
 void cleanup(void);
+void cmd_msg(char *s);
+void cmd_quit(char *s);
+void cmd_server(char *s);
 void detach(Buffer *b);
 int dial(char *host, char *port);
 void die(const char *errstr, ...);
@@ -92,16 +95,13 @@ void focusnext(const Arg *arg);
 void focusprev(const Arg *arg);
 int getkey(void);
 void logw(char *txt);
-void msg(char *s);
 int mvprintf(int x, int y, char *fmt, ...);
 Buffer *newbuf(char *name);
 void parsecmd(void);
 void parsesrv(void);
 int printb(Buffer *b, char *fmt, ...);
-void quit(char *s);
 void resize(int x, int y);
 void scroll(const Arg *arg);
-void server(char *s);
 void setup(void);
 void sigwinch(int unused);
 char *skip(char *s, char c);
@@ -144,6 +144,37 @@ cleanup(void) {
 		free(b);
 	}
 	tcsetattr(0, TCSANOW, &origti);
+}
+
+void
+cmd_msg(char *s) {
+	char *to, *txt;
+
+	if(!srv) {
+		printb(sel, "You're offline.");
+		return;
+	}
+	to = s;
+	txt = skip(to, ' ');
+	sout("PRIVMSG %s :%s", to, txt);
+}
+
+void
+cmd_quit(char *s) {
+	/* XXX implements proper QUIT command */
+	running = 0;
+}
+
+
+void
+cmd_server(char *s) {
+	/* XXX if srv then disconnect */
+	srv = fdopen(dial(host, port), "r+");
+	if(!srv)
+		die("cannot connect to server");
+	setbuf(srv, NULL);
+	sout("NICK %s", nick);
+	sout("USER %s localhost %s :%s", nick, host, nick);
 }
 
 void
@@ -330,19 +361,6 @@ logw(char *txt) {
 	fflush(logp);
 }
 
-void
-msg(char *s) {
-	char *to, *txt;
-
-	if(!srv) {
-		printb(sel, "You're offline.");
-		return;
-	}
-	to = s;
-	txt = skip(to, ' ');
-	sout("PRIVMSG %s :%s", to, txt);
-}
-
 int
 mvprintf(int x, int y, char *fmt, ...) {
 	va_list ap;
@@ -522,11 +540,6 @@ printb(Buffer *b, char *fmt, ...) {
 }
 
 void
-quit(char *s) {
-	running = 0;
-}
-
-void
 resize(int x, int y) {
 	rows = x;
 	cols = y;
@@ -545,18 +558,6 @@ scroll(const Arg *arg) {
 		y = -sel->ntxt + rows - 2;
 	sel->offy = y;
 	draw();
-}
-
-void
-server(char *s) {
-	if(srv)
-		quit(NULL);
-	srv = fdopen(dial(host, port), "r+");
-	if(!srv)
-		die("cannot connect to server");
-	setbuf(srv, NULL);
-	sout("NICK %s", nick);
-	sout("USER %s localhost %s :%s", nick, host, nick);
 }
 
 void
