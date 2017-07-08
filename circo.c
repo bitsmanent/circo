@@ -197,9 +197,9 @@ draw(void) {
 
 void
 drawbar(void) {
-	mvprintf(1, 1, "%s@%s:%s - %s%s",
+	mvprintf(1, 1, "%s@%s:%s - %s%s%s",
 		srv ? nick : "", srv ? host : "", srv ? port : "",
-		sel->name, CLEARRIGHT);
+		sel->name, sel->offy ? " [scrolled]" : "", CLEARRIGHT);
 }
 
 void
@@ -209,7 +209,7 @@ drawbuf(void) {
 
 	printf(CURSOFF);
 	y = rows - 1;
-	for(i = sel->ntxt - 1 - sel->offy; i >= 0 && y > 1; --i) {
+	for(i = sel->ntxt - 1 + sel->offy; i >= 0 && y > 1; --i) {
 		txt = sel->texts[i];
 		x = 1;
 		if(txt.len < cols - 1) {
@@ -515,6 +515,8 @@ printb(Buffer *b, char *fmt, ...) {
 	len = vsprintf(b->texts[b->ntxt].text, fmt, ap);
 	va_end(ap);
 	logw(b->texts[b->ntxt].text);
+	if(sel->offy)
+		--sel->offy;
 	b->texts[b->ntxt++].len = len;
 	return len;
 }
@@ -532,18 +534,15 @@ resize(int x, int y) {
 
 void
 scroll(const Arg *arg) {
-	int y, n;
+	int y;
 
-	if(sel->ntxt < rows - 1)
+	if(sel->ntxt <= rows - 2)
 		return;
 	y = sel->offy + arg->i;
-	if(y < 0)
+	if(y > 0)
 		y = 0;
-	else {
-		n = sel->ntxt - rows - 1;
-		if(y > n)
-			y = n;
-	}
+	else if(sel->ntxt + y < rows - 2)
+		y = -sel->ntxt + rows - 2;
 	sel->offy = y;
 	draw();
 }
