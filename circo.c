@@ -30,6 +30,14 @@ char *argv0;
 #define CURSON          "\33[?25h"
 #define CURSOFF         "\33[?25l"
 
+#if defined CTRL && defined _AIX
+  #undef CTRL
+#endif
+#ifndef CTRL
+  #define CTRL(k)   ((k) & 0x1F)
+#endif
+#define CTRL_ALT(k) ((k) + (129 - 'a'))
+
 /* enums */
 enum { KeyUp = -50, KeyDown, KeyRight, KeyLeft, KeyHome, KeyEnd, KeyDel, KeyPgUp, KeyPgDw };
 
