@@ -1,10 +1,10 @@
 /* See LICENSE file for copyright and license details. */
 
 Command commands[] = {
-	{ "connect", server },
-	{ "msg", msg },
-	{ "quit", quit },
-	{ "server", server },
+	{ "connect", cmd_server },
+	{ "msg", cmd_msg },
+	{ "quit", cmd_quit },
+	{ "server", cmd_server },
 };
 
 /* key definitions */
