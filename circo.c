@@ -39,7 +39,7 @@ char *argv0;
 #define CTRL_ALT(k) ((k) + (129 - 'a'))
 
 /* enums */
-enum { KeyUp = -50, KeyDown, KeyRight, KeyLeft, KeyHome, KeyEnd, KeyDel, KeyPgUp, KeyPgDw };
+enum { KeyUp = -50, KeyDown, KeyRight, KeyLeft, KeyHome, KeyEnd, KeyDel, KeyPgUp, KeyPgDw, KeyBackspace };
 
 typedef union {
 	int i;
@@ -89,6 +89,7 @@ void drawbar(void);
 void drawbuf(void);
 void drawcmdln(void);
 void *ecalloc(size_t nmemb, size_t size);
+void editor_chdel(const Arg *arg);
 void editor_clear(const Arg *arg);
 Buffer *getbuf(char *name);
 void focusnext(const Arg *arg);
@@ -285,6 +286,14 @@ ecalloc(size_t nmemb, size_t size) {
 }
 
 void
+editor_chdel(const Arg *arg) {
+	if(!sel->cmdlen)
+		return;
+	sel->cmd[--sel->cmdlen] = '\0';
+	drawcmdln();
+}
+
+void
 editor_clear(const Arg *arg) {
 	sel->cmd[0] = '\0';
 	sel->cmdlen = 0;
@@ -329,8 +338,12 @@ int
 getkey(void) {
 	int key = getchar(), c;
 
-	if(key != '\x1b' || getchar() != '[')
+	if(key != '\x1b' || getchar() != '[') {
+		switch(key) {
+		case 127: key = KeyBackspace; break;
+		}
 		return key;
+	}
 	switch((c = getchar())) {
 	case 'A': key = KeyUp; break;
 	case 'B': key = KeyDown; break;
@@ -345,10 +358,6 @@ getkey(void) {
 	case '6': key = KeyPgDw; break;
 	case '7': key = KeyHome; break;
 	case '8': key = KeyEnd; break;
-	default:
-		/* debug */
-		mvprintf(1, rows, "Unknown char: %c (%d)", c, c);
-		break;
 	}
 	return key;
 }
