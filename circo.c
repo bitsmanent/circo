@@ -572,8 +572,10 @@ setup(void) {
 	sa.sa_handler = sigwinch;
 	sigaction(SIGWINCH, &sa, NULL);
 	tcgetattr(0, &origti);
-	ti.c_lflag &= ~(ECHO | ICANON);
+	cfmakeraw(&ti);
 	ti.c_iflag |= ICRNL;
+	ti.c_cc[VMIN] = 0;
+	ti.c_cc[VTIME] = 0;
 	tcsetattr(0, TCSAFLUSH, &ti);
 
 	ioctl(0, TIOCGWINSZ, &ws);
