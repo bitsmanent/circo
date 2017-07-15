@@ -9,7 +9,7 @@ Status
 ======
 Input editing is yet incomplete and parsing of server messages need some
 cleanup. The code is working, I'm using it for a while and didn't notice any
-issue.
+issue. UTF-8 is not currently supported and I'm not sure it will ever will.
 
 Despite it's minimal design, circo is definitely not a suckless piece of code.
 It don't even follows in all respect the UNIX philosophy but it provides a very
