@@ -558,6 +558,11 @@ void
 scroll(const Arg *arg) {
 	int y;
 
+	if(!arg->i) {
+		sel->offy = 0;
+		draw();
+		return;
+	}
 	if(sel->ntxt <= rows - 2)
 		return;
 	y = sel->offy + arg->i;

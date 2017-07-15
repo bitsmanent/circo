@@ -16,4 +16,5 @@ static Key keys[] = {
         { CTRL('p'),   focusprev,        {0} },
         { KeyPgUp,     scroll,		 {.i = -20} },
         { KeyPgDw,     scroll,		 {.i = +20} },
+        { KeyEnd,      scroll,		 {.i = 0} },
 };
