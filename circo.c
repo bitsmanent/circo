@@ -48,20 +48,16 @@ typedef union {
 	const void *v;
 } Arg;
 
-typedef struct {
-	char text[512];
-	int len;
-} Text;
-
 typedef struct Buffer Buffer;
 struct Buffer {
-	Text *texts;
+	char *data;
 	char name[256];
 	char cmd[512];
+	int size;
+	int len;
+	int line;
+	int offln;
 	int cmdlen;
-	int txtsz;
-	int ntxt;
-	int offy;
 	Buffer *next;
 };
 
@@ -77,10 +73,12 @@ typedef struct {
 } Key;
 
 void attach(Buffer *b);
+int bufpos(char *buf, int len, int *line, int *off);
 void cleanup(void);
 void cmd_msg(char *s);
 void cmd_quit(char *s);
 void cmd_server(char *s);
+int countlines(char *buf, int len);
 void detach(Buffer *b);
 int dial(char *host, char *port);
 void die(const char *errstr, ...);
@@ -95,6 +93,7 @@ Buffer *getbuf(char *name);
 void focusnext(const Arg *arg);
 void focusprev(const Arg *arg);
 int getkey(void);
+int lineoff(char *buf, int len, int line);
 void logw(char *txt);
 int mvprintf(int x, int y, char *fmt, ...);
 Buffer *newbuf(char *name);
@@ -134,6 +133,43 @@ attach(Buffer *b) {
 	buffers = b;
 }
 
+/*
+ * Note: this function is weird and will be removed. I wrote it to enforce DRY.
+ *
+ * Expected cases:
+ * - line < 1: set *line to the line corresponding to the given offset
+ * - line > 0: set *off to the offset corresponding to the given line
+ * Return the number of lines.
+*/
+int
+bufpos(char *buf, int len, int *line, int *off) {
+	int set = 0, x, y, i;
+
+	for(i = 0, x = y = 1; i < len; ++i) {
+		if(!set && line && off) {
+			if(*off == i) {
+				if(*line < 1)
+					*line = y;
+				set = 1;
+			}
+			else if(*line == y) {
+				if(*line > 0)
+					*off = i;
+				set = 1;
+			}
+		}
+		if(x == cols || buf[i] == '\n') {
+			if(buf[i] != '\n' && i < len - 1 && buf[i + 1] == '\n')
+				++i;
+			x = 1;
+			++y;
+		}
+		else
+			++x;
+	}
+	return y - 1;
+}
+
 void
 cleanup(void) {
 	Buffer *b;
@@ -141,7 +177,7 @@ cleanup(void) {
 	while(buffers) {
 		b = buffers;
 		buffers = buffers->next;
-		free(b->texts);
+		free(b->data);
 		free(b);
 	}
 	tcsetattr(0, TCSANOW, &origti);
@@ -152,7 +188,7 @@ cmd_msg(char *s) {
 	char *to, *txt;
 
 	if(!srv) {
-		printb(sel, "You're offline.");
+		printb(sel, "You're offline.\n");
 		return;
 	}
 	to = s;
@@ -176,6 +212,11 @@ cmd_server(char *s) {
 	setbuf(srv, NULL);
 	sout("NICK %s", nick);
 	sout("USER %s localhost %s :%s", nick, host, nick);
+}
+
+int
+countlines(char *buf, int len) {
+	return bufpos(buf, len, NULL, NULL);
 }
 
 void
@@ -229,41 +270,49 @@ draw(void) {
 
 void
 drawbar(void) {
+	/* XXX truncate to cols */
 	mvprintf(1, 1, "%s@%s:%s - %s%s%s",
 		srv ? nick : "", srv ? host : "", srv ? port : "",
-		sel->name, sel->offy ? " [scrolled]" : "", CLEARRIGHT);
+		sel->name, sel->line ? " [scrolled]" : "", CLEARRIGHT);
 }
 
 void
 drawbuf(void) {
-	Text txt;
-	int x, y, i, j;
+	int x, y, c, i;
 
-	printf(CURSOFF);
-	y = rows - 1;
-	for(i = sel->ntxt - 1 + sel->offy; i >= 0 && y > 1; --i) {
-		txt = sel->texts[i];
-		x = 1;
-		if(txt.len < cols - 1) {
-			mvprintf(x, y, "%s", CLEARLN);
-			x += mvprintf(x, y, "%s", txt.text);
-		}
-		else {
-			y -= txt.len / cols;
-			for(j = 0; j < txt.len && y > 1; ++j) {
-				if(x > cols) {
-					++y;
-					x = 1;
-				}
-				x += mvprintf(x, y, "%c", txt.text[j]);
-			}
-			x += mvprintf(x, y, "%s", CLEARRIGHT);
-			y -= txt.len / cols;
-		}
-		--y;
+	if(!sel->len)
+		return;
+	if(sel->line) {
+		i = sel->offln;
 	}
-	while(--y > 1)
-		mvprintf(1, y, "%s", CLEARLN);
+	else {
+		c = countlines(sel->data, sel->len); /* XXX sel->nlines */
+		i = lineoff(sel->data, sel->len, 1 + (c > rows - 2 ? c - (rows - 2) : 0));
+	}
+	x = 1;
+	y = 2;
+	printf(CURSOFF);
+	for(; i < sel->len; ++i) {
+		c = sel->data[i];
+		if(c != '\n' && x <= cols) {
+			x += mvprintf(x, y, "%c", c);
+			continue;
+		}
+		if(c == '\n' && x <= cols)
+			mvprintf(x, y, "%s", CLEARRIGHT);
+		x = 1;
+		if(++y == rows)
+			break;
+		if(c != '\n')
+			x += mvprintf(x, y, "%c", c);
+		if(x > cols && i < sel->len - 1 && sel->data[i + 1] == '\n')
+			++i;
+	}
+	if(y < rows) {
+		mvprintf(x, y, "%s", CLEARRIGHT);
+		while(++y < rows)
+			mvprintf(1, y, "%s", CLEARLN);
+	}
 	printf(CURSON);
 }
 
@@ -362,11 +411,19 @@ getkey(void) {
 	return key;
 }
 
+int
+lineoff(char *buf, int len, int line) {
+	int off = -1;
+
+	bufpos(buf, len, &line, &off);
+	return off;
+}
+
 void
 logw(char *txt) {
 	if(!logp)
 		return;
-	fprintf(logp, "%s\n", txt);
+	fprintf(logp, "%s", txt);
 	fflush(logp);
 }
 
@@ -415,7 +472,7 @@ parsecmd(void) {
 		fflush(srv);
 	}
 	else {
-		printb(sel, "/%s: not connected.", p);
+		printb(sel, "/%s: not connected.\n", p);
 	}
 }
 
@@ -427,7 +484,7 @@ parsesrv(void) {
 
 	if(fgets(buf, sizeof buf, srv) == NULL) {
 		srv = NULL;
-		printb(sel, "! Remote host closed connection");
+		printb(sel, "! Remote host closed connection.\n");
 		draw();
 		return;
 	}
@@ -447,35 +504,38 @@ parsesrv(void) {
 	txt = skip(par, ':');
 	trim(txt);
 	trim(par);
-	printb(getbuf("status"), "[DEBUG] %s | %s | %s | txt:(%s)", cmd, usr, par, txt);
+	printb(getbuf("status"), "[DEBUG] %s | %s | %s | txt:(%s)\n", cmd, usr, par, txt);
 	if(!strcmp("PRIVMSG", cmd)) {
 		b = getbuf(par);
 		if(!b)
 			b = newbuf(par);
-		printb(b, "%s: %s", usr, txt);
+		printb(b, "%s: %s\n", usr, txt);
 		if(b != sel)
 			return;
 	}
 	else if(!strcmp("JOIN", cmd)) {
 		if(strcmp(usr, nick)) {
-			printb(getbuf(par), "JOIN %s", usr);
+			printb(getbuf(par), "JOIN %s\n", usr);
 			return;
 		}
-		printb((sel = newbuf(par)), "You joined %s", par);
+		printb((sel = newbuf(par)), "You joined %s\n", par);
 	}
 	else if(!strcmp("331", cmd) || !strcmp("332", cmd)) {
-		printb(sel, "Topic on %s is %s", par, txt);
+		printb(sel, "Topic on %s is %s\n", par, txt);
 	}
 	else if(!strcmp("TOPIC", cmd)) {
-		printb(getbuf(par), "%s has changed the topic: %s", usr, txt);
+		printb(getbuf(par), "%s has changed the topic: %s\n", usr, txt);
 	}
 	else if(!strcmp("QUIT", cmd)) {
 		/* XXX no channel here */
-		printb(sel, "QUIT %s (%s)", usr, txt);
+		printb(sel, "QUIT %s (%s)\n", usr, txt);
+	}
+	else if(!strcmp("KICK", cmd)) {
+		/* XXX */
 	}
 	else if(!strcmp("PART", cmd)) {
 		if(strcmp(usr, nick)) {
-			printb(getbuf(par), "PART %s (%s)", usr, txt);
+			printb(getbuf(par), "PART %s (%s)\n", usr, txt);
 			return;
 		}
 		b = getbuf(par);
@@ -493,7 +553,7 @@ parsesrv(void) {
 	else if(!strcmp("PONG", cmd) || !strcmp("366", cmd) || !strcmp("375", cmd) || !strcmp("376", cmd))
 		return;
 	else if(!strcmp("NOTICE", cmd))
-		printb(sel, "NOTICE: %s: %s", usr, txt);
+		printb(sel, "NOTICE: %s: %s\n", usr, txt);
 	else if(!strcmp("MODE", cmd)) {
 		if(*nick)
 			return;
@@ -502,19 +562,19 @@ parsesrv(void) {
 	else if(!strcmp("NICK", cmd)) {
 		if(strcmp(usr, nick)) {
 			/* XXX no channel here */
-			printb(sel, "NICK %s: %s", usr, txt);
+			printb(sel, "NICK %s: %s\n", usr, txt);
 			return;
 		}
 		strcpy(nick, txt);
-		printb(sel, "Your nick is now %s", nick);
+		printb(sel, "Your nick is now %s\n", nick);
 	}
 	else if(!strcmp("437", cmd)) {
-		printb(sel, "%s is busy, choose a different /nick", nick);
+		printb(sel, "%s is busy, choose a different /nick\n", nick);
 		*nick = '\0';
 	}
 	else if(!strcmp("353", cmd)) {
 		par = skip(par, '@') + 1;
-		printb(sel, "Users in %s: %s", par, txt); /* XXX par is wrong */
+		printb(sel, "Users in %s: %s\n", par, txt); /* XXX par is wrong */
 	}
 	else {
 		/* XXX 470 channel forward */
@@ -523,7 +583,7 @@ parsesrv(void) {
 			b = getbuf("status");
 		else
 			b = sel;
-		printb(b, "%s", txt);
+		printb(b, "%s\n", txt);
 		if(b != sel)
 			return;
 	}
@@ -533,18 +593,19 @@ parsesrv(void) {
 int
 printb(Buffer *b, char *fmt, ...) {
 	va_list ap;
+	char buf[1024];
 	int len;
 
-	if(!b->txtsz || b->ntxt >= b->txtsz)
-		if(!(b->texts = realloc(b->texts, (b->txtsz += 512) * sizeof(Text))))
-			die("cannot realloc\n");
 	va_start(ap, fmt);
-	len = vsprintf(b->texts[b->ntxt].text, fmt, ap);
+	len = vsnprintf(buf, sizeof buf, fmt, ap);
 	va_end(ap);
-	logw(b->texts[b->ntxt].text);
-	if(sel->offy)
-		--sel->offy;
-	b->texts[b->ntxt++].len = len;
+
+	if(!b->size || b->len >= b->size)
+		if(!(b->data = realloc(b->data, b->size += len))) /* XXX optimize */
+			die("cannot realloc\n");
+	memcpy(&b->data[b->len], buf, len);
+	b->len += len;
+	logw(buf);
 	return len;
 }
 
@@ -552,25 +613,39 @@ void
 resize(int x, int y) {
 	rows = x;
 	cols = y;
+	if(sel) {
+		if(sel->line && sel->offln)
+			sel->offln = lineoff(sel->data, sel->len, sel->line);
+		draw();
+	}
 }
 
 void
 scroll(const Arg *arg) {
-	int y;
+	int nlines;
 
-	if(!arg->i) {
-		sel->offy = 0;
+	if(!sel->len)
+		return;
+	if(arg->i == 0) {
+		sel->line = 0;
+		sel->offln = 0;
 		draw();
 		return;
 	}
-	if(sel->ntxt <= rows - 2)
-		return;
-	y = sel->offy + arg->i;
-	if(y > 0)
-		y = 0;
-	else if(sel->ntxt + y < rows - 2)
-		y = -sel->ntxt + rows - 2;
-	sel->offy = y;
+	nlines = countlines(sel->data, sel->len); /* XXX sel->nlines */
+	if(!sel->line)
+		sel->line = nlines;
+	sel->line += arg->i;
+	if(sel->line < 1)
+		sel->line = 1;
+	else if(sel->line > nlines)
+		sel->line = nlines;
+	sel->offln = lineoff(sel->data, sel->len, sel->line);
+	if(sel->offln == -1) {
+		die("This is a bug.\n"
+			"len=%d line=%d size=%d offln=%d char='%c' nlines=%d\n",
+			sel->len, sel->line, sel->size, sel->offln, sel->data[sel->offln], nlines);
+	}
 	draw();
 }
 
@@ -637,7 +712,7 @@ trim(char *s) {
 
 void
 usage(void) {
-	die("Usage: %s ...", argv0);
+	die("Usage: %s ...\n", argv0);
 }
 
 void
@@ -660,7 +735,6 @@ usrin(void) {
 		if(sel->cmd[0] == '\0')
 			return;
 		sel->cmd[sel->cmdlen] = '\0';
-
 		if(sel->cmd[0] == '/') {
 			if(sel->cmdlen == 1)
 				return;
@@ -668,15 +742,15 @@ usrin(void) {
 		}
 		else {
 			if(!strcmp(sel->name, "status")) {
-				printb(sel, "Cannot send text here.");
+				printb(sel, "Cannot send text here.\n");
 			}
 			else {
 				if(!srv) {
-					printb(sel, "You're not connected.");
+					printb(sel, "You're not connected.\n");
 					return;
 				}
 				sout("PRIVMSG %s :%s", sel->name, sel->cmd);
-				printb(sel, "%s: %s", nick, sel->cmd);
+				printb(sel, "%s: %s\n", nick, sel->cmd);
 			}
 		}
 
@@ -685,7 +759,7 @@ usrin(void) {
 		draw();
 	}
 	else if(isgraph(key) || (key == ' ' && sel->cmdlen)) {
-		if(sel->cmdlen >= sizeof sel->cmd)
+		if(sel->cmdlen >= sizeof sel->cmd - 1)
 			return;
 		sel->cmd[sel->cmdlen++] = key;
 		sel->cmd[sel->cmdlen] = '\0';
