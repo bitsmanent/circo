@@ -56,6 +56,7 @@ struct Buffer {
 	int size;
 	int len;
 	int line;
+	int nlines;
 	int offln;
 	int cmdlen;
 	Buffer *next;
@@ -282,13 +283,9 @@ drawbuf(void) {
 
 	if(!sel->len)
 		return;
-	if(sel->line) {
-		i = sel->offln;
-	}
-	else {
-		c = countlines(sel->data, sel->len); /* XXX sel->nlines */
-		i = lineoff(sel->data, sel->len, 1 + (c > rows - 2 ? c - (rows - 2) : 0));
-	}
+	i = sel->line
+		? sel->offln
+		: lineoff(sel->data, sel->len, 1 + (sel->nlines > rows - 2 ? sel->nlines - (rows - 2) : 0));
 	x = 1;
 	y = 2;
 	printf(CURSOFF);
@@ -605,6 +602,7 @@ printb(Buffer *b, char *fmt, ...) {
 			die("cannot realloc\n");
 	memcpy(&b->data[b->len], buf, len);
 	b->len += len;
+	b->nlines = countlines(b->data, b->len);
 	logw(buf);
 	return len;
 }
@@ -616,14 +614,13 @@ resize(int x, int y) {
 	if(sel) {
 		if(sel->line && sel->offln)
 			sel->offln = lineoff(sel->data, sel->len, sel->line);
+		sel->nlines = countlines(sel->data, sel->len);
 		draw();
 	}
 }
 
 void
 scroll(const Arg *arg) {
-	int nlines;
-
 	if(!sel->len)
 		return;
 	if(arg->i == 0) {
@@ -632,19 +629,18 @@ scroll(const Arg *arg) {
 		draw();
 		return;
 	}
-	nlines = countlines(sel->data, sel->len); /* XXX sel->nlines */
 	if(!sel->line)
-		sel->line = nlines;
+		sel->line = sel->nlines;
 	sel->line += arg->i;
 	if(sel->line < 1)
 		sel->line = 1;
-	else if(sel->line > nlines)
-		sel->line = nlines;
+	else if(sel->line > sel->nlines)
+		sel->line = sel->nlines;
 	sel->offln = lineoff(sel->data, sel->len, sel->line);
 	if(sel->offln == -1) {
 		die("This is a bug.\n"
 			"len=%d line=%d size=%d offln=%d char='%c' nlines=%d\n",
-			sel->len, sel->line, sel->size, sel->offln, sel->data[sel->offln], nlines);
+			sel->len, sel->line, sel->size, sel->offln, sel->data[sel->offln], sel->nlines);
 	}
 	draw();
 }
