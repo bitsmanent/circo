@@ -85,6 +85,7 @@ void cmd_server(char *cmd, char *s);
 void cmdln_chdel(const Arg *arg);
 void cmdln_clear(const Arg *arg);
 void cmdln_cursor(const Arg *arg);
+void cmdln_wdel(const Arg *arg);
 void detach(Buffer *b);
 int dial(char *host, char *port);
 void die(const char *errstr, ...);
@@ -284,6 +285,26 @@ cmdln_cursor(const Arg *arg) {
 	drawcmdln();
 }
 
+void
+cmdln_wdel(const Arg *arg) {
+	int i;
+
+	if(!sel->cmdoff)
+		return;
+	i = sel->cmdoff;
+	while(i && sel->cmd[i] != ' ')
+		--i;
+	while(i && sel->cmd[i] == ' ')
+		--i;
+	if(i)
+		++i;
+	drawbuf();
+	memmove(&sel->cmd[i], &sel->cmd[sel->cmdoff], sel->cmdlen - sel->cmdoff);
+	sel->cmdlen -= sel->cmdoff - i;
+	sel->cmd[sel->cmdlen] = '\0';
+	sel->cmdoff = i;
+	drawcmdln();
+}
 
 void
 detach(Buffer *b) {
