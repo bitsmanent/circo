@@ -491,13 +491,10 @@ parsecmd(void) {
 			return;
 		}
 	}
-	if(srv) {
+	if(srv)
 		sout("%s %s", p, tp);
-		fflush(srv);
-	}
-	else {
+	else
 		printb(sel, "/%s: not connected.\n", p);
-	}
 }
 
 void
@@ -625,7 +622,6 @@ printb(Buffer *b, char *fmt, ...) {
 	va_start(ap, fmt);
 	len = vsnprintf(buf, sizeof buf, fmt, ap);
 	va_end(ap);
-
 	if(!b->size || b->len >= b->size)
 		if(!(b->data = realloc(b->data, b->size += len))) /* XXX optimize */
 			die("cannot realloc\n");
@@ -752,19 +748,16 @@ usage(void) {
 
 void
 usrin(void) {
-	int key = getkey(), iskey = 0, i;
+	int key = getkey(), i;
 
-	for(i = 0; i < LENGTH(keys); ++i) {
-		if(keys[i].key == key) {
-			keys[i].func(&keys[i].arg);
-			iskey = 1;
-		}
-	}
-	if(iskey) {
+	for(i = 0; i < LENGTH(keys); ++i)
+		if(keys[i].key == key)
+			break;
+	if(i < LENGTH(keys)) {
+		keys[i].func(&keys[i].arg);
 		while(getkey() != EOF); /* discard remaining input */
 		return;
 	}
-
 	if(key == '\n') {
 		logw(sel->cmd);
 		if(sel->cmd[0] == '\0')
@@ -775,19 +768,14 @@ usrin(void) {
 			parsecmd();
 		}
 		else {
-			if(!strcmp(sel->name, "status")) {
+			if(!strcmp(sel->name, "status"))
 				printb(sel, "Cannot send text here.\n");
-			}
-			else {
-				if(!srv)
-					printb(sel, "You're not connected.\n");
-				else
-					privmsg(sel->name, sel->cmd);
-			}
+			else if(!srv)
+				printb(sel, "You're not connected.\n");
+			else
+				privmsg(sel->name, sel->cmd);
 		}
-		sel->cmd[0] = '\0';
-		sel->cmdlen = 0;
-		sel->cmdoff = 0;
+		cmdln_clear(NULL);
 		draw();
 	}
 	else if(isgraph(key) || (key == ' ' && sel->cmdlen)) {
