@@ -103,6 +103,7 @@ Buffer *newbuf(char *name);
 void parsecmd(void);
 void parsesrv(void);
 int printb(Buffer *b, char *fmt, ...);
+void privmsg(char *to, char *txt);
 void resize(int x, int y);
 void scroll(const Arg *arg);
 void setup(void);
@@ -209,7 +210,7 @@ cmd_msg(char *s) {
 	}
 	to = s;
 	txt = skip(to, ' ');
-	sout("PRIVMSG %s :%s", to, txt);
+	privmsg(to, txt);
 }
 
 void
@@ -410,7 +411,6 @@ getbuf(char *name) {
 	for(b = buffers; b; b = b->next)
 		if(!strcmp(b->name, name))
 			return b;
-
 	return NULL;
 }
 
@@ -637,6 +637,16 @@ printb(Buffer *b, char *fmt, ...) {
 }
 
 void
+privmsg(char *to, char *txt) {
+	Buffer *b = getbuf(to);
+	
+	if(!b)
+		b = isalpha(*to) ? newbuf(to) : sel;
+	printb(b, "%s: %s\n", nick, txt);
+	sout("PRIVMSG %s :%s", to, txt);
+}
+
+void
 resize(int x, int y) {
 	rows = x;
 	cols = y;
@@ -769,13 +779,10 @@ usrin(void) {
 				printb(sel, "Cannot send text here.\n");
 			}
 			else {
-				if(!srv) {
+				if(!srv)
 					printb(sel, "You're not connected.\n");
-				}
-				else {
-					sout("PRIVMSG %s :%s", sel->name, sel->cmd);
-					printb(sel, "%s: %s\n", nick, sel->cmd);
-				}
+				else
+					privmsg(sel->name, sel->cmd);
 			}
 		}
 		sel->cmd[0] = '\0';
