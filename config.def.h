@@ -12,10 +12,10 @@ Command commands[] = {
 static Key keys[] = {
 	/* key            function          argument */
         { CTRL('u'),      cmdln_clear,      {0} },
-        { CTRL('h'),      cmdln_chdel,      {.i = -1} },
+        { KeyBackspace,   cmdln_chdel,      {.i = -1} },
         { CTRL('a'),      cmdln_cursor,     {.i = 0}},
         { CTRL('e'),      cmdln_cursor,     {.i = 999}},
-        { CTRL('l'),      cmdln_cursor,     {.i = -1}},
+        { CTRL('h'),      cmdln_cursor,     {.i = -1}},
         { KeyLeft,        cmdln_cursor,     {.i = -1}},
         { CTRL('l'),      cmdln_cursor,     {.i = +1}},
         { KeyRight,       cmdln_cursor,     {.i = +1}},
