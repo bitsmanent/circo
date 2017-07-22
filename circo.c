@@ -82,6 +82,9 @@ void cleanup(void);
 void cmd_msg(char *s);
 void cmd_quit(char *s);
 void cmd_server(char *s);
+void cmdln_chdel(const Arg *arg);
+void cmdln_clear(const Arg *arg);
+void cmdln_cursor(const Arg *arg);
 void detach(Buffer *b);
 int dial(char *host, char *port);
 void die(const char *errstr, ...);
@@ -90,9 +93,6 @@ void drawbar(void);
 void drawbuf(void);
 void drawcmdln(void);
 void *ecalloc(size_t nmemb, size_t size);
-void editor_chdel(const Arg *arg);
-void editor_clear(const Arg *arg);
-void editor_cursor(const Arg *arg);
 Buffer *getbuf(char *name);
 void focusnext(const Arg *arg);
 void focusprev(const Arg *arg);
@@ -231,6 +231,45 @@ cmd_server(char *s) {
 }
 
 void
+cmdln_chdel(const Arg *arg) {
+	if(!sel->cmdoff)
+		return;
+	if(sel->cmdoff < sel->cmdlen)
+		memmove(&sel->cmd[sel->cmdoff - 1], &sel->cmd[sel->cmdoff],
+			sel->cmdlen - sel->cmdoff);
+	sel->cmd[--sel->cmdlen] = '\0';
+	--sel->cmdoff;
+	drawcmdln();
+}
+
+void
+cmdln_clear(const Arg *arg) {
+	if(!sel->cmdoff)
+		return;
+	memmove(sel->cmd, &sel->cmd[sel->cmdoff], sel->cmdlen - sel->cmdoff);
+	sel->cmdlen -= sel->cmdoff;
+	sel->cmd[sel->cmdlen] = '\0';
+	sel->cmdoff = 0;
+	drawcmdln();
+}
+
+void
+cmdln_cursor(const Arg *arg) {
+	if(!arg->i) {
+		sel->cmdoff = 0;
+	}
+	else {
+		sel->cmdoff += arg->i;
+		if(sel->cmdoff < 0)
+			sel->cmdoff = 0;
+		else if(sel->cmdoff > sel->cmdlen)
+			sel->cmdoff = sel->cmdlen;
+	}
+	drawcmdln();
+}
+
+
+void
 detach(Buffer *b) {
 	Buffer **tb;
 
@@ -340,44 +379,6 @@ ecalloc(size_t nmemb, size_t size) {
 	if(!(p = calloc(nmemb, size)))
 		die("Cannot allocate memory.\n");
 	return p;
-}
-
-void
-editor_chdel(const Arg *arg) {
-	if(!sel->cmdoff)
-		return;
-	if(sel->cmdoff < sel->cmdlen)
-		memmove(&sel->cmd[sel->cmdoff - 1], &sel->cmd[sel->cmdoff],
-			sel->cmdlen - sel->cmdoff);
-	sel->cmd[--sel->cmdlen] = '\0';
-	--sel->cmdoff;
-	drawcmdln();
-}
-
-void
-editor_clear(const Arg *arg) {
-	if(!sel->cmdoff)
-		return;
-	memmove(sel->cmd, &sel->cmd[sel->cmdoff], sel->cmdlen - sel->cmdoff);
-	sel->cmdlen -= sel->cmdoff;
-	sel->cmd[sel->cmdlen] = '\0';
-	sel->cmdoff = 0;
-	drawcmdln();
-}
-
-void
-editor_cursor(const Arg *arg) {
-	if(!arg->i) {
-		sel->cmdoff = 0;
-	}
-	else {
-		sel->cmdoff += arg->i;
-		if(sel->cmdoff < 0)
-			sel->cmdoff = 0;
-		else if(sel->cmdoff > sel->cmdlen)
-			sel->cmdoff = sel->cmdlen;
-	}
-	drawcmdln();
 }
 
 void
