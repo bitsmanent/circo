@@ -57,8 +57,9 @@ struct Buffer {
 	int len;
 	int line;
 	int nlines;
-	int offln;
+	int lnoff;
 	int cmdlen;
+	int cmdoff;
 	Buffer *next;
 };
 
@@ -74,12 +75,13 @@ typedef struct {
 } Key;
 
 void attach(Buffer *b);
+int bufl2o(char *buf, int len, int line);
+int bufnl(char *buf, int len);
 int bufpos(char *buf, int len, int *line, int *off);
 void cleanup(void);
 void cmd_msg(char *s);
 void cmd_quit(char *s);
 void cmd_server(char *s);
-int countlines(char *buf, int len);
 void detach(Buffer *b);
 int dial(char *host, char *port);
 void die(const char *errstr, ...);
@@ -90,11 +92,11 @@ void drawcmdln(void);
 void *ecalloc(size_t nmemb, size_t size);
 void editor_chdel(const Arg *arg);
 void editor_clear(const Arg *arg);
+void editor_cursor(const Arg *arg);
 Buffer *getbuf(char *name);
 void focusnext(const Arg *arg);
 void focusprev(const Arg *arg);
 int getkey(void);
-int lineoff(char *buf, int len, int line);
 void logw(char *txt);
 int mvprintf(int x, int y, char *fmt, ...);
 Buffer *newbuf(char *name);
@@ -132,6 +134,19 @@ void
 attach(Buffer *b) {
 	b->next = buffers;
 	buffers = b;
+}
+
+int
+bufl2o(char *buf, int len, int line) {
+	int off = -1;
+
+	bufpos(buf, len, &line, &off);
+	return off;
+}
+
+int
+bufnl(char *buf, int len) {
+	return bufpos(buf, len, NULL, NULL);
 }
 
 /*
@@ -215,11 +230,6 @@ cmd_server(char *s) {
 	sout("USER %s localhost %s :%s", nick, host, nick);
 }
 
-int
-countlines(char *buf, int len) {
-	return bufpos(buf, len, NULL, NULL);
-}
-
 void
 detach(Buffer *b) {
 	Buffer **tb;
@@ -284,8 +294,8 @@ drawbuf(void) {
 	if(!sel->len)
 		return;
 	i = sel->line
-		? sel->offln
-		: lineoff(sel->data, sel->len, 1 + (sel->nlines > rows - 2 ? sel->nlines - (rows - 2) : 0));
+		? sel->lnoff
+		: bufl2o(sel->data, sel->len, 1 + (sel->nlines > rows - 2 ? sel->nlines - (rows - 2) : 0));
 	x = 1;
 	y = 2;
 	printf(CURSOFF);
@@ -315,11 +325,12 @@ drawbuf(void) {
 
 void
 drawcmdln(void) {
-	int pslen = 4 + strlen(sel->name); /* 1 for the cursor */
-	int cmdsz = cols  - pslen;
+	int pslen = 4 + strlen(sel->name); /* "[%s] " + 1 for the cursor */
+	int cmdsz = cols - pslen;
 	int i = sel->cmdlen > cmdsz ? sel->cmdlen - cmdsz : 0;
 
 	mvprintf(1, rows, "[%s] %s%s", sel->name, &sel->cmd[i], CLEARRIGHT);
+	printf(CURPOS, rows, pslen + (sel->cmdoff - i));
 }
 
 void *
@@ -333,16 +344,39 @@ ecalloc(size_t nmemb, size_t size) {
 
 void
 editor_chdel(const Arg *arg) {
-	if(!sel->cmdlen)
+	if(!sel->cmdoff)
 		return;
+	if(sel->cmdoff < sel->cmdlen)
+		memmove(&sel->cmd[sel->cmdoff - 1], &sel->cmd[sel->cmdoff],
+			sel->cmdlen - sel->cmdoff);
 	sel->cmd[--sel->cmdlen] = '\0';
+	--sel->cmdoff;
 	drawcmdln();
 }
 
 void
 editor_clear(const Arg *arg) {
-	sel->cmd[0] = '\0';
-	sel->cmdlen = 0;
+	if(!sel->cmdoff)
+		return;
+	memmove(sel->cmd, &sel->cmd[sel->cmdoff], sel->cmdlen - sel->cmdoff);
+	sel->cmdlen -= sel->cmdoff;
+	sel->cmd[sel->cmdlen] = '\0';
+	sel->cmdoff = 0;
+	drawcmdln();
+}
+
+void
+editor_cursor(const Arg *arg) {
+	if(!arg->i) {
+		sel->cmdoff = 0;
+	}
+	else {
+		sel->cmdoff += arg->i;
+		if(sel->cmdoff < 0)
+			sel->cmdoff = 0;
+		else if(sel->cmdoff > sel->cmdlen)
+			sel->cmdoff = sel->cmdlen;
+	}
 	drawcmdln();
 }
 
@@ -406,14 +440,6 @@ getkey(void) {
 	case '8': key = KeyEnd; break;
 	}
 	return key;
-}
-
-int
-lineoff(char *buf, int len, int line) {
-	int off = -1;
-
-	bufpos(buf, len, &line, &off);
-	return off;
 }
 
 void
@@ -602,7 +628,7 @@ printb(Buffer *b, char *fmt, ...) {
 			die("cannot realloc\n");
 	memcpy(&b->data[b->len], buf, len);
 	b->len += len;
-	b->nlines = countlines(b->data, b->len);
+	b->nlines = bufnl(b->data, b->len);
 	logw(buf);
 	return len;
 }
@@ -612,9 +638,9 @@ resize(int x, int y) {
 	rows = x;
 	cols = y;
 	if(sel) {
-		if(sel->line && sel->offln)
-			sel->offln = lineoff(sel->data, sel->len, sel->line);
-		sel->nlines = countlines(sel->data, sel->len);
+		if(sel->line && sel->lnoff)
+			sel->lnoff = bufl2o(sel->data, sel->len, sel->line);
+		sel->nlines = bufnl(sel->data, sel->len);
 		draw();
 	}
 }
@@ -625,7 +651,7 @@ scroll(const Arg *arg) {
 		return;
 	if(arg->i == 0) {
 		sel->line = 0;
-		sel->offln = 0;
+		sel->lnoff = 0;
 		draw();
 		return;
 	}
@@ -636,11 +662,11 @@ scroll(const Arg *arg) {
 		sel->line = 1;
 	else if(sel->line > sel->nlines)
 		sel->line = sel->nlines;
-	sel->offln = lineoff(sel->data, sel->len, sel->line);
-	if(sel->offln == -1) {
+	sel->lnoff = bufl2o(sel->data, sel->len, sel->line);
+	if(sel->lnoff == -1) {
 		die("This is a bug.\n"
-			"len=%d line=%d size=%d offln=%d char='%c' nlines=%d\n",
-			sel->len, sel->line, sel->size, sel->offln, sel->data[sel->offln], sel->nlines);
+			"len=%d line=%d size=%d lnoff=%d char='%c' nlines=%d\n",
+			sel->len, sel->line, sel->size, sel->lnoff, sel->data[sel->lnoff], sel->nlines);
 	}
 	draw();
 }
@@ -730,7 +756,6 @@ usrin(void) {
 		logw(sel->cmd);
 		if(sel->cmd[0] == '\0')
 			return;
-		sel->cmd[sel->cmdlen] = '\0';
 		if(sel->cmd[0] == '/') {
 			if(sel->cmdlen == 1)
 				return;
@@ -743,22 +768,27 @@ usrin(void) {
 			else {
 				if(!srv) {
 					printb(sel, "You're not connected.\n");
-					return;
 				}
-				sout("PRIVMSG %s :%s", sel->name, sel->cmd);
-				printb(sel, "%s: %s\n", nick, sel->cmd);
+				else {
+					sout("PRIVMSG %s :%s", sel->name, sel->cmd);
+					printb(sel, "%s: %s\n", nick, sel->cmd);
+				}
 			}
 		}
-
 		sel->cmd[0] = '\0';
 		sel->cmdlen = 0;
+		sel->cmdoff = 0;
 		draw();
 	}
 	else if(isgraph(key) || (key == ' ' && sel->cmdlen)) {
-		if(sel->cmdlen >= sizeof sel->cmd - 1)
+		if(sel->cmdlen == sizeof sel->cmd)
 			return;
-		sel->cmd[sel->cmdlen++] = key;
-		sel->cmd[sel->cmdlen] = '\0';
+		memmove(&sel->cmd[sel->cmdoff+1], &sel->cmd[sel->cmdoff],
+			sel->cmdlen - sel->cmdoff);
+		sel->cmd[sel->cmdoff] = key;
+		sel->cmd[++sel->cmdlen] = '\0';
+		if(sel->cmdoff < sizeof sel->cmd - 1)
+			++sel->cmdoff;
 		drawcmdln();
 	}
 }
