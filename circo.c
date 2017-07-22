@@ -65,7 +65,7 @@ struct Buffer {
 
 typedef struct {
 	char *name;
-	void (*func)(char *);
+	void (*func)(char *, char *);
 } Command;
 
 typedef struct {
@@ -79,9 +79,9 @@ int bufl2o(char *buf, int len, int line);
 int bufnl(char *buf, int len);
 int bufpos(char *buf, int len, int *line, int *off);
 void cleanup(void);
-void cmd_msg(char *s);
-void cmd_quit(char *s);
-void cmd_server(char *s);
+void cmd_msg(char *cmd, char *s);
+void cmd_quit(char *cmd, char *s);
+void cmd_server(char *cmd, char *s);
 void cmdln_chdel(const Arg *arg);
 void cmdln_clear(const Arg *arg);
 void cmdln_cursor(const Arg *arg);
@@ -125,7 +125,6 @@ char *host = "irc.freenode.org";
 char *port = "6667";
 char logfile[64] = "/tmp/circo.log";
 char nick[32];
-
 
 /* configuration, allows nested code to access above variables */
 #include "config.h"
@@ -201,7 +200,7 @@ cleanup(void) {
 }
 
 void
-cmd_msg(char *s) {
+cmd_msg(char *cmd, char *s) {
 	char *to, *txt;
 
 	if(!srv) {
@@ -214,21 +213,36 @@ cmd_msg(char *s) {
 }
 
 void
-cmd_quit(char *s) {
+cmd_quit(char *cmd, char *s) {
 	/* XXX implements proper QUIT command */
 	running = 0;
 }
 
 
 void
-cmd_server(char *s) {
+cmd_server(char *cmd, char *s) {
+	char *h, *p;
+
+	p = skip(s, ' ');
+	h = s;
+	if(!*h)
+		h = host;
+	if(!*p)
+		p = port;
+	if(*skip(p, ' ')) {
+		printb(getbuf("status"), "Usage: /%s [host] [port]\n", cmd);
+		return;
+	}
 	/* XXX if srv then disconnect */
-	srv = fdopen(dial(host, port), "r+");
-	if(!srv)
-		die("cannot connect to server");
+	srv = fdopen(dial(h, p), "r+");
+	if(!srv) {
+		printb(getbuf("status"), "cannot connect to %s on port %s\n", h, p);
+		drawbuf();
+		return;
+	}
 	setbuf(srv, NULL);
 	sout("NICK %s", nick);
-	sout("USER %s localhost %s :%s", nick, host, nick);
+	sout("USER %s localhost %s :%s", nick, h, nick);
 }
 
 void
@@ -288,7 +302,7 @@ dial(char *host, char *port) {
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_STREAM;
 	if(getaddrinfo(host, port, &hints, &res) != 0)
-		die("error: cannot resolve hostname '%s':", host);
+		return -1;
 	for(r = res; r; r = r->ai_next) {
 		if((srvfd = socket(r->ai_family, r->ai_socktype, r->ai_protocol)) == -1)
 			continue;
@@ -298,7 +312,7 @@ dial(char *host, char *port) {
 	}
 	freeaddrinfo(res);
 	if(!r)
-		die("error: cannot connect to host '%s'\n", host);
+		return -1;
 	return srvfd;
 }
 
@@ -487,7 +501,7 @@ parsecmd(void) {
 	len = strlen(p);
 	for(i = 0; i < LENGTH(commands); ++i) {
 		if(!strncmp(commands[i].name, p, len)) {
-			commands[i].func(tp);
+			commands[i].func(p, tp);
 			return;
 		}
 	}
