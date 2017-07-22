@@ -214,10 +214,10 @@ cmd_msg(char *cmd, char *s) {
 
 void
 cmd_quit(char *cmd, char *s) {
-	/* XXX implements proper QUIT command */
+	if(srv)
+		sout("QUIT%s%s", s ? " :" : "", s ? s : "");
 	running = 0;
 }
-
 
 void
 cmd_server(char *cmd, char *s) {
@@ -233,10 +233,11 @@ cmd_server(char *cmd, char *s) {
 		printb(getbuf("status"), "Usage: /%s [host] [port]\n", cmd);
 		return;
 	}
-	/* XXX if srv then disconnect */
+	if(srv)
+		sout("QUIT");
 	srv = fdopen(dial(h, p), "r+");
 	if(!srv) {
-		printb(getbuf("status"), "cannot connect to %s on port %s\n", h, p);
+		printb(getbuf("status"), "Cannot connect to %s on port %s\n", h, p);
 		drawbuf();
 		return;
 	}
