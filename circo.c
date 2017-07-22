@@ -530,6 +530,8 @@ parsesrv(void) {
 	trim(par);
 	printb(getbuf("status"), "[DEBUG] %s | %s | %s | txt:(%s)\n", cmd, usr, par, txt);
 	if(!strcmp("PRIVMSG", cmd)) {
+		if(strcmp(nick, usr))
+			par = usr;
 		b = getbuf(par);
 		if(!b)
 			b = newbuf(par);
