@@ -209,9 +209,13 @@ void
 cmd_close(char *cmd, char *s) {
 	Buffer *b;
 
-	if(!*s)
-		s = sel->name;
-	b = getbuf(s);
+	if(*s) {
+		b = getbuf(s);
+	}
+	else {
+		b = sel;
+		s = b->name;
+	}
 	if(!b) {
 		printb(status, "%s: unknown buffer.\n", s);
 		return;
@@ -220,12 +224,12 @@ cmd_close(char *cmd, char *s) {
 		printb(status, "Cannot close the status.\n");
 		return;
 	}
+	if(*s == '#' || *s == '&')
+		sout("PART :%s", s);
 	if(b == sel)
 		sel = sel->next ? sel->next : buffers;
 	detach(b);
 	free(b);
-	if(*s == '#' || *s == '&')
-		sout("PART :%s", s);
 }
 
 void
@@ -632,8 +636,8 @@ parsesrv(void) {
 	txt = skip(par, ':');
 	trim(txt);
 	trim(par);
+	//printb(sel, "DEBUG | cmd=%s nick=%s par=%s usr=%s txt=%s\n", cmd, nick, par, usr, txt);
 	if(!strcmp("PRIVMSG", cmd)) {
-		printb(sel, "DEBUG | nick=%s par=%s usr=%s txt=%s\n", nick, par, usr, txt);
 		if(!strcmp(nick, par))
 			par = usr;
 		b = getbuf(par);
@@ -645,10 +649,14 @@ parsesrv(void) {
 	}
 	else if(!strcmp("JOIN", cmd)) {
 		if(strcmp(usr, nick)) {
-			printb(getbuf(par), "JOIN %s\n", usr);
-			return;
+			b = getbuf(par);
+			printb(b, "JOIN %s\n", usr);
+			if(b != sel)
+				return;
 		}
-		printb((sel = newbuf(par)), "You joined %s\n", par);
+		else {
+			printb((sel = newbuf(par)), "You joined %s\n", par);
+		}
 	}
 	else if(!strcmp("331", cmd) || !strcmp("332", cmd)) {
 		printb(sel, "Topic on %s is %s\n", par, txt);
@@ -885,7 +893,7 @@ usrin(void) {
 			else
 				privmsg(sel->name, sel->cmd);
 		}
-		cmdln_clear(NULL);
+		sel->cmd[sel->cmdlen = sel->cmdoff = 0] = '\0';
 		draw();
 	}
 	else if(isgraph(key) || (key == ' ' && sel->cmdlen)) {
