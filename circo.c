@@ -14,6 +14,7 @@
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <termios.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "arg.h"
@@ -603,7 +604,7 @@ parsesrv(void) {
 	txt = skip(par, ':');
 	trim(txt);
 	trim(par);
-	printb(status, "[DEBUG] %s | %s | %s | txt:(%s)\n", cmd, usr, par, txt);
+	//printb(status, "[DEBUG] %s | %s | %s | txt:(%s)\n", cmd, usr, par, txt);
 	if(!strcmp("PRIVMSG", cmd)) {
 		if(strcmp(nick, usr))
 			par = usr;
@@ -694,11 +695,14 @@ parsesrv(void) {
 int
 printb(Buffer *b, char *fmt, ...) {
 	va_list ap;
-	char buf[1024];
-	int len;
+	char buf[1024 + 80]; /* 80 should be enough for the timestring... */
+	time_t tm;
+	int len = 0;
 
+	tm = time(NULL);
+        len = strftime(buf, sizeof buf - len, TIMESTAMP_FORMAT, localtime(&tm));
 	va_start(ap, fmt);
-	len = vsnprintf(buf, sizeof buf, fmt, ap);
+	len += vsnprintf(&buf[len], sizeof(buf) - len, fmt, ap);
 	va_end(ap);
 	if(!b->size || b->len >= b->size)
 		if(!(b->data = realloc(b->data, b->size += len))) /* XXX optimize */
