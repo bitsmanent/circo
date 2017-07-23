@@ -19,7 +19,8 @@ one would expect from an IRC client for the console:
 - Resize handling
 - Command history*
 - Raw IRC commands
-* To be implemented.
+
+*To be implemented.
 
 None of the CTCP specification has been (nor will be) implemented, which means
 no DCC at all. In other words: direct chat and files sending are not allowed.
