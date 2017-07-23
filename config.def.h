@@ -1,11 +1,16 @@
 /* See LICENSE file for copyright and license details. */
 
+/* Timestamp format; see strftime(3). */
+#define TIMESTAMP_FORMAT "%Y-%m-%d %T | "
+
 Command commands[] = {
 	/* command     function */
+	{ "close",     cmd_close },
 	{ "connect",   cmd_server },
 	{ "msg",       cmd_msg },
 	{ "quit",      cmd_quit },
 	{ "server",    cmd_server },
+	{ "topic",     cmd_topic },
 };
 
 /* key definitions */

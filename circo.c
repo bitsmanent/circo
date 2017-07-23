@@ -81,10 +81,11 @@ int bufl2o(char *buf, int len, int line);
 int bufnl(char *buf, int len);
 int bufpos(char *buf, int len, int *line, int *off);
 void cleanup(void);
+void cmd_close(char *cmd, char *s);
 void cmd_msg(char *cmd, char *s);
 void cmd_quit(char *cmd, char *s);
-void cmd_close(char *cmd, char *s);
 void cmd_server(char *cmd, char *s);
+void cmd_topic(char *cmd, char *s);
 void cmdln_chldel(const Arg *arg);
 void cmdln_chrdel(const Arg *arg);
 void cmdln_clear(const Arg *arg);
@@ -205,26 +206,6 @@ cleanup(void) {
 }
 
 void
-cmd_msg(char *cmd, char *s) {
-	char *to, *txt;
-
-	if(!srv) {
-		printb(sel, "You're offline.\n");
-		return;
-	}
-	to = s;
-	txt = skip(to, ' ');
-	privmsg(to, txt);
-}
-
-void
-cmd_quit(char *cmd, char *s) {
-	if(srv)
-		sout("QUIT%s%s", s ? " :" : "", s ? s : "");
-	running = 0;
-}
-
-void
 cmd_close(char *cmd, char *s) {
 	Buffer *b;
 
@@ -245,6 +226,26 @@ cmd_close(char *cmd, char *s) {
 	free(b);
 	if(*s == '#' || *s == '&')
 		sout("PART :%s", s);
+}
+
+void
+cmd_msg(char *cmd, char *s) {
+	char *to, *txt;
+
+	if(!srv) {
+		printb(sel, "You're offline.\n");
+		return;
+	}
+	to = s;
+	txt = skip(to, ' ');
+	privmsg(to, txt);
+}
+
+void
+cmd_quit(char *cmd, char *s) {
+	if(srv)
+		sout("QUIT%s%s", s ? " :" : "", s ? s : "");
+	running = 0;
 }
 
 void
@@ -272,6 +273,33 @@ cmd_server(char *cmd, char *s) {
 	setbuf(srv, NULL);
 	sout("NICK %s", nick);
 	sout("USER %s localhost %s :%s", nick, h, nick);
+}
+
+void
+cmd_topic(char *cmd, char *s) {
+	char *chan, *txt;
+
+	if(!srv) {
+		printb(sel, "You're offline.\n");
+		return;
+	}
+	if(*s == '#' || *s == '&') {
+		chan = s;
+		txt = skip(s, ' ');
+	}
+	else {
+		if(sel == status) {
+			printb(sel, "Cannot set topic of the status.\n");
+			return;
+		}
+		chan = sel->name;
+		txt = s;
+	}
+	if(!*txt) {
+		printb(sel, "Usage: /%s [channel] text\n", cmd);
+		return;
+	}
+	sout("TOPIC %s :%s", chan, txt);
 }
 
 void
@@ -604,7 +632,6 @@ parsesrv(void) {
 	txt = skip(par, ':');
 	trim(txt);
 	trim(par);
-	//printb(status, "[DEBUG] %s | %s | %s | txt:(%s)\n", cmd, usr, par, txt);
 	if(!strcmp("PRIVMSG", cmd)) {
 		if(strcmp(nick, usr))
 			par = usr;
