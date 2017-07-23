@@ -82,7 +82,8 @@ void cleanup(void);
 void cmd_msg(char *cmd, char *s);
 void cmd_quit(char *cmd, char *s);
 void cmd_server(char *cmd, char *s);
-void cmdln_chdel(const Arg *arg);
+void cmdln_chldel(const Arg *arg);
+void cmdln_chrdel(const Arg *arg);
 void cmdln_clear(const Arg *arg);
 void cmdln_cursor(const Arg *arg);
 void cmdln_wdel(const Arg *arg);
@@ -248,7 +249,7 @@ cmd_server(char *cmd, char *s) {
 }
 
 void
-cmdln_chdel(const Arg *arg) {
+cmdln_chldel(const Arg *arg) {
 	if(!sel->cmdoff)
 		return;
 	if(sel->cmdoff < sel->cmdlen)
@@ -256,6 +257,18 @@ cmdln_chdel(const Arg *arg) {
 			sel->cmdlen - sel->cmdoff);
 	sel->cmd[--sel->cmdlen] = '\0';
 	--sel->cmdoff;
+	drawcmdln();
+}
+
+void
+cmdln_chrdel(const Arg *arg) {
+	if(!sel->cmdoff)
+		return;
+	if(sel->cmdoff >= sel->cmdlen)
+		return;
+	memmove(&sel->cmd[sel->cmdoff], &sel->cmd[sel->cmdoff + 1],
+		sel->cmdlen - sel->cmdoff - 1);
+	sel->cmd[--sel->cmdlen] = '\0';
 	drawcmdln();
 }
 

@@ -12,7 +12,8 @@ Command commands[] = {
 static Key keys[] = {
 	/* key            function          argument */
         { CTRL('u'),      cmdln_clear,      {0} },
-        { KeyBackspace,   cmdln_chdel,      {.i = -1} },
+        { KeyBackspace,   cmdln_chldel,     {0} },
+        { CTRL('d'),      cmdln_chrdel,     {0} },
         { CTRL('w'),      cmdln_wdel,       {0} },
         { CTRL('a'),      cmdln_cursor,     {.i = 0}},
         { CTRL('e'),      cmdln_cursor,     {.i = 999}},
