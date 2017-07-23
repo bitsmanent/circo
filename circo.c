@@ -328,14 +328,13 @@ cmdln_wdel(const Arg *arg) {
 
 	if(!sel->cmdoff)
 		return;
-	i = sel->cmdoff;
-	while(i && sel->cmd[i] != ' ')
-		--i;
+	i = sel->cmdoff - 1;
 	while(i && sel->cmd[i] == ' ')
+		--i;
+	while(i && sel->cmd[i] != ' ')
 		--i;
 	if(i)
 		++i;
-	drawbuf();
 	memmove(&sel->cmd[i], &sel->cmd[sel->cmdoff], sel->cmdlen - sel->cmdoff);
 	sel->cmdlen -= sel->cmdoff - i;
 	sel->cmd[sel->cmdlen] = '\0';
