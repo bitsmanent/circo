@@ -81,6 +81,7 @@ int bufpos(char *buf, int len, int *line, int *off);
 void cleanup(void);
 void cmd_msg(char *cmd, char *s);
 void cmd_quit(char *cmd, char *s);
+void cmd_close(char *cmd, char *s);
 void cmd_server(char *cmd, char *s);
 void cmdln_chldel(const Arg *arg);
 void cmdln_chrdel(const Arg *arg);
@@ -219,6 +220,30 @@ cmd_quit(char *cmd, char *s) {
 	if(srv)
 		sout("QUIT%s%s", s ? " :" : "", s ? s : "");
 	running = 0;
+}
+
+void
+cmd_close(char *cmd, char *s) {
+	Buffer *bs, *b;
+
+	if(!*s)
+		s = sel->name;
+	bs = getbuf("status");
+	b = getbuf(s);
+	if(!b) {
+		printb(bs, "%s: unknown buffer.\n", s);
+		return;
+	}
+	if(b == bs) {
+		printb(bs, "Cannot close the status.\n");
+		return;
+	}
+	if(b == sel)
+		sel = sel->next ? sel->next : buffers;
+	detach(b);
+	free(b);
+	if(*s == '#' || *s == '&')
+		sout("PART :%s", s);
 }
 
 void
@@ -606,17 +631,17 @@ parsesrv(void) {
 		/* XXX */
 	}
 	else if(!strcmp("PART", cmd)) {
-		if(strcmp(usr, nick)) {
-			printb(getbuf(par), "PART %s (%s)\n", usr, txt);
-			return;
-		}
 		b = getbuf(par);
-		if(b != sel) {
-			detach(b);
+		if(!b)
+			return;
+		if(strcmp(usr, nick)) {
+			printb(b, "PART %s (%s)\n", usr, txt);
 			return;
 		}
-		sel = sel->next ? sel->next : buffers;
+		if(b == sel)
+			sel = sel->next ? sel->next : buffers;
 		detach(b);
+		free(b);
 	}
 	else if(!strcmp("PING", cmd)) {
 		sout("PONG %s", txt);
