@@ -289,14 +289,14 @@ cmd_topic(char *cmd, char *s) {
 	}
 	else {
 		if(sel == status) {
-			printb(sel, "Cannot set topic of the status.\n");
+			printb(sel, "Usage: /%s [channel] [text]\n", cmd);
 			return;
 		}
 		chan = sel->name;
 		txt = s;
 	}
 	if(!*txt) {
-		printb(sel, "Usage: /%s [channel] text\n", cmd);
+		sout("TOPIC %s", chan);
 		return;
 	}
 	sout("TOPIC %s :%s", chan, txt);
@@ -633,7 +633,8 @@ parsesrv(void) {
 	trim(txt);
 	trim(par);
 	if(!strcmp("PRIVMSG", cmd)) {
-		if(strcmp(nick, usr))
+		printb(sel, "DEBUG | nick=%s par=%s usr=%s txt=%s\n", nick, par, usr, txt);
+		if(!strcmp(nick, par))
 			par = usr;
 		b = getbuf(par);
 		if(!b)
