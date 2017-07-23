@@ -74,6 +74,7 @@ typedef struct {
 	const Arg arg;
 } Key;
 
+/* function declarations */
 void attach(Buffer *b);
 int bufl2o(char *buf, int len, int line);
 int bufnl(char *buf, int len);
@@ -286,13 +287,18 @@ cmdln_chldel(const Arg *arg) {
 
 void
 cmdln_chrdel(const Arg *arg) {
-	if(!sel->cmdoff)
+	if(!sel->cmdlen)
 		return;
-	if(sel->cmdoff >= sel->cmdlen)
+	if(sel->cmdoff == sel->cmdlen) {
+		--sel->cmdoff;
+		drawcmdln();
 		return;
+	}
 	memmove(&sel->cmd[sel->cmdoff], &sel->cmd[sel->cmdoff + 1],
 		sel->cmdlen - sel->cmdoff - 1);
 	sel->cmd[--sel->cmdlen] = '\0';
+	if(sel->cmdoff && sel->cmdoff == sel->cmdlen)
+		--sel->cmdoff;
 	drawcmdln();
 }
 
