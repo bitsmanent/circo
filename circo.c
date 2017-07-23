@@ -119,7 +119,7 @@ void usrin(void);
 
 /* variables */
 FILE *srv, *logp;
-Buffer *buffers, *sel;
+Buffer *buffers, *status, *sel;
 struct termios origti;
 int running = 1;
 int rows, cols;
@@ -224,18 +224,17 @@ cmd_quit(char *cmd, char *s) {
 
 void
 cmd_close(char *cmd, char *s) {
-	Buffer *bs, *b;
+	Buffer *b;
 
 	if(!*s)
 		s = sel->name;
-	bs = getbuf("status");
 	b = getbuf(s);
 	if(!b) {
-		printb(bs, "%s: unknown buffer.\n", s);
+		printb(status, "%s: unknown buffer.\n", s);
 		return;
 	}
-	if(b == bs) {
-		printb(bs, "Cannot close the status.\n");
+	if(b == status) {
+		printb(status, "Cannot close the status.\n");
 		return;
 	}
 	if(b == sel)
@@ -257,14 +256,14 @@ cmd_server(char *cmd, char *s) {
 	if(!*p)
 		p = port;
 	if(*skip(p, ' ')) {
-		printb(getbuf("status"), "Usage: /%s [host] [port]\n", cmd);
+		printb(status, "Usage: /%s [host] [port]\n", cmd);
 		return;
 	}
 	if(srv)
 		sout("QUIT");
 	srv = fdopen(dial(h, p), "r+");
 	if(!srv) {
-		printb(getbuf("status"), "Cannot connect to %s on port %s\n", h, p);
+		printb(status, "Cannot connect to %s on port %s\n", h, p);
 		drawbuf();
 		return;
 	}
@@ -599,7 +598,7 @@ parsesrv(void) {
 	txt = skip(par, ':');
 	trim(txt);
 	trim(par);
-	printb(getbuf("status"), "[DEBUG] %s | %s | %s | txt:(%s)\n", cmd, usr, par, txt);
+	printb(status, "[DEBUG] %s | %s | %s | txt:(%s)\n", cmd, usr, par, txt);
 	if(!strcmp("PRIVMSG", cmd)) {
 		if(strcmp(nick, usr))
 			par = usr;
@@ -677,7 +676,7 @@ parsesrv(void) {
 		/* XXX 470 channel forward */
 
 		if(!strcmp("372", cmd)) /* motd */
-			b = getbuf("status");
+			b = status;
 		else
 			b = sel;
 		printb(b, "%s\n", txt);
@@ -842,7 +841,7 @@ usrin(void) {
 			parsecmd();
 		}
 		else {
-			if(!strcmp(sel->name, "status"))
+			if(sel == status)
 				printb(sel, "Cannot send text here.\n");
 			else if(!srv)
 				printb(sel, "You're not connected.\n");
@@ -897,7 +896,7 @@ main(int argc, char *argv[]) {
 
 	if(*logfile)
 		logp = fopen(logfile, "a");
-	sel = newbuf("status");
+	sel = status = newbuf("status");
 	setbuf(stdout, NULL);
 	printf(CLEAR);
 	draw();
