@@ -61,6 +61,7 @@ struct Buffer {
 	int lnoff;
 	int cmdlen;
 	int cmdoff;
+	int need_redraw;
 	Buffer *next;
 };
 
@@ -68,6 +69,11 @@ typedef struct {
 	char *name;
 	void (*func)(char *, char *);
 } Command;
+
+typedef struct {
+	char *name;
+	void (*func)(char *, char *, char *);
+} Message;
 
 typedef struct {
 	const int key;
@@ -110,6 +116,19 @@ void parsecmd(void);
 void parsesrv(void);
 int printb(Buffer *b, char *fmt, ...);
 void privmsg(char *to, char *txt);
+void recv_busynick(char *u, char *u2, char *u3);
+void recv_join(char *who, char *chan, char *txt);
+void recv_mode(char *u, char *val, char *u2);
+void recv_motd(char *u, char *u2, char *txt);
+void recv_nick(char *who, char *u, char *txt);
+void recv_notice(char *who, char *u, char *txt);
+void recv_part(char *who, char *chan, char *txt);
+void recv_ping(char *u, char *u2, char *txt);
+void recv_privmsg(char *from, char *to, char *txt);
+void recv_quit(char *who, char *u, char *txt);
+void recv_topic(char *who, char *chan, char *txt);
+void recv_topicrpl(char *usr, char *par, char *txt);
+void recv_users(char *usr, char *par, char *txt);
 void resize(int x, int y);
 void scroll(const Arg *arg);
 void setup(void);
@@ -126,6 +145,30 @@ Buffer *buffers, *status, *sel;
 struct termios origti;
 int running = 1;
 int rows, cols;
+
+Message messages[] = {
+	{ "JOIN",    recv_join },
+	{ "MODE",    recv_mode },
+	{ "NICK",    recv_nick },
+	{ "NOTICE",  recv_notice },
+	{ "PART",    recv_part },
+	{ "PING",    recv_ping },
+	{ "PRIVMSG", recv_privmsg },
+	{ "QUIT",    recv_quit },
+	{ "TOPIC",   recv_topic },
+	{ "331",     recv_topicrpl }, /* no topic set */
+	{ "332",     recv_topicrpl },
+	{ "353",     recv_users },
+	{ "372",     recv_motd },
+	{ "437",     recv_busynick },
+
+	/* ignored */
+	{ "PONG",    NULL },
+	{ "366",     NULL }, /* end of names */
+	{ "375",     NULL }, /* motd start */
+	{ "376",     NULL }, /* motd end */
+	{ "470",     NULL }, /* channel forward */
+};
 
 char *host = "irc.freenode.org";
 char *port = "6667";
@@ -271,7 +314,7 @@ cmd_server(char *cmd, char *s) {
 	srv = fdopen(dial(h, p), "r+");
 	if(!srv) {
 		printb(status, "Cannot connect to %s on port %s\n", h, p);
-		drawbuf();
+		sel->need_redraw = 1;
 		return;
 	}
 	setbuf(srv, NULL);
@@ -287,9 +330,18 @@ cmd_topic(char *cmd, char *s) {
 		printb(sel, "You're offline.\n");
 		return;
 	}
+	if(!*s) {
+		if(sel->name[0] == '#' || sel->name[0] == '&')
+			sout("TOPIC %s", sel->name);
+		return;
+	}
 	if(*s == '#' || *s == '&') {
 		chan = s;
 		txt = skip(s, ' ');
+		if(!*txt) {
+			sout("TOPIC %s", chan);
+			return;
+		}
 	}
 	else {
 		if(sel == status) {
@@ -298,10 +350,6 @@ cmd_topic(char *cmd, char *s) {
 		}
 		chan = sel->name;
 		txt = s;
-	}
-	if(!*txt) {
-		sout("TOPIC %s", chan);
-		return;
 	}
 	sout("TOPIC %s :%s", chan, txt);
 }
@@ -315,7 +363,7 @@ cmdln_chldel(const Arg *arg) {
 			sel->cmdlen - sel->cmdoff);
 	sel->cmd[--sel->cmdlen] = '\0';
 	--sel->cmdoff;
-	drawcmdln();
+	sel->need_redraw = 1;
 }
 
 void
@@ -324,7 +372,7 @@ cmdln_chrdel(const Arg *arg) {
 		return;
 	if(sel->cmdoff == sel->cmdlen) {
 		--sel->cmdoff;
-		drawcmdln();
+		sel->need_redraw = 1;
 		return;
 	}
 	memmove(&sel->cmd[sel->cmdoff], &sel->cmd[sel->cmdoff + 1],
@@ -332,7 +380,7 @@ cmdln_chrdel(const Arg *arg) {
 	sel->cmd[--sel->cmdlen] = '\0';
 	if(sel->cmdoff && sel->cmdoff == sel->cmdlen)
 		--sel->cmdoff;
-	drawcmdln();
+	sel->need_redraw = 1;
 }
 
 void
@@ -343,7 +391,7 @@ cmdln_clear(const Arg *arg) {
 	sel->cmdlen -= sel->cmdoff;
 	sel->cmd[sel->cmdlen] = '\0';
 	sel->cmdoff = 0;
-	drawcmdln();
+	sel->need_redraw = 1;
 }
 
 void
@@ -358,7 +406,7 @@ cmdln_cursor(const Arg *arg) {
 		else if(sel->cmdoff > sel->cmdlen)
 			sel->cmdoff = sel->cmdlen;
 	}
-	drawcmdln();
+	sel->need_redraw = 1;
 }
 
 void
@@ -378,7 +426,7 @@ cmdln_wdel(const Arg *arg) {
 	sel->cmdlen -= sel->cmdoff - i;
 	sel->cmd[sel->cmdlen] = '\0';
 	sel->cmdoff = i;
-	drawcmdln();
+	sel->need_redraw = 1;
 }
 
 void
@@ -496,7 +544,7 @@ ecalloc(size_t nmemb, size_t size) {
 void
 focusnext(const Arg *arg) {
 	sel = sel->next ? sel->next : buffers;
-	draw();
+	sel->need_redraw = 1;
 }
 
 void 
@@ -512,7 +560,7 @@ focusprev(const Arg *arg) {
 			if(b->next == sel)
 				sel = b;
 	}
-	draw();
+	sel->need_redraw = 1;
 }
 
 Buffer *
@@ -610,16 +658,15 @@ parsecmd(void) {
 
 void
 parsesrv(void) {
-	Buffer *b;
 	char *cmd, *usr, *par, *txt;
 	char buf[4096]; /* XXX size */
 
 	if(fgets(buf, sizeof buf, srv) == NULL) {
 		srv = NULL;
 		printb(sel, "! Remote host closed connection.\n");
-		draw();
 		return;
 	}
+	//printb(sel, "DEBUG | buf=%s\n", buf);
 	cmd = buf;
 	usr = host;
 	if(!cmd || !*cmd)
@@ -637,95 +684,13 @@ parsesrv(void) {
 	trim(txt);
 	trim(par);
 	//printb(sel, "DEBUG | cmd=%s nick=%s par=%s usr=%s txt=%s\n", cmd, nick, par, usr, txt);
-	if(!strcmp("PRIVMSG", cmd)) {
-		if(!strcmp(nick, par))
-			par = usr;
-		b = getbuf(par);
-		if(!b)
-			b = newbuf(par);
-		printb(b, "%s: %s\n", usr, txt);
-		if(b != sel)
-			return;
-	}
-	else if(!strcmp("JOIN", cmd)) {
-		if(strcmp(usr, nick)) {
-			b = getbuf(par);
-			printb(b, "JOIN %s\n", usr);
-			if(b != sel)
-				return;
-		}
-		else {
-			printb((sel = newbuf(par)), "You joined %s\n", par);
+	for(int i = 0; i < LENGTH(messages); ++i) {
+		if(!strcmp(messages[i].name, cmd)) {
+			if(messages[i].func)
+				messages[i].func(usr, par, txt);
+			break;
 		}
 	}
-	else if(!strcmp("331", cmd) || !strcmp("332", cmd)) {
-		printb(sel, "Topic on %s is %s\n", par, txt);
-	}
-	else if(!strcmp("TOPIC", cmd)) {
-		printb(getbuf(par), "%s has changed the topic: %s\n", usr, txt);
-	}
-	else if(!strcmp("QUIT", cmd)) {
-		/* XXX no channel here */
-		printb(sel, "QUIT %s (%s)\n", usr, txt);
-	}
-	else if(!strcmp("KICK", cmd)) {
-		/* XXX */
-	}
-	else if(!strcmp("PART", cmd)) {
-		b = getbuf(par);
-		if(!b)
-			return;
-		if(strcmp(usr, nick)) {
-			printb(b, "PART %s (%s)\n", usr, txt);
-			return;
-		}
-		if(b == sel)
-			sel = sel->next ? sel->next : buffers;
-		detach(b);
-		free(b);
-	}
-	else if(!strcmp("PING", cmd)) {
-		sout("PONG %s", txt);
-		return;
-	}
-	else if(!strcmp("PONG", cmd) || !strcmp("366", cmd) || !strcmp("375", cmd) || !strcmp("376", cmd))
-		return;
-	else if(!strcmp("NOTICE", cmd))
-		printb(sel, "NOTICE: %s: %s\n", usr, txt);
-	else if(!strcmp("MODE", cmd)) {
-		if(*nick)
-			return;
-		strcpy(nick, par);
-	}
-	else if(!strcmp("NICK", cmd)) {
-		if(strcmp(usr, nick)) {
-			/* XXX no channel here */
-			printb(sel, "NICK %s: %s\n", usr, txt);
-			return;
-		}
-		strcpy(nick, txt);
-		printb(sel, "Your nick is now %s\n", nick);
-	}
-	else if(!strcmp("437", cmd)) {
-		printb(sel, "%s is busy, choose a different /nick\n", nick);
-		*nick = '\0';
-	}
-	else if(!strcmp("353", cmd)) {
-		par = skip(par, '@') + 1;
-		printb(sel, "Users in %s: %s\n", par, txt); /* XXX par is wrong */
-	}
-	else {
-		/* XXX 470 channel forward */
-
-		if(!strcmp("372", cmd)) /* motd */
-			b = status;
-		else
-			b = sel;
-		printb(b, "%s\n", txt);
-		if(b != sel)
-			return;
-	}
-	draw();
 }
 
 int
@@ -746,6 +711,7 @@ printb(Buffer *b, char *fmt, ...) {
 	memcpy(&b->data[b->len], buf, len);
 	b->len += len;
 	b->nlines = bufnl(b->data, b->len);
+	b->need_redraw = 1;
 	logw(buf);
 	return len;
 }
@@ -758,6 +724,117 @@ privmsg(char *to, char *txt) {
 		b = isalpha(*to) ? newbuf(to) : sel;
 	printb(b, "%s: %s\n", nick, txt);
 	sout("PRIVMSG %s :%s", to, txt);
+}
+
+void
+recv_busynick(char *u, char *u2, char *u3) {
+	printb(status, "%s is busy, choose a different /nick\n", nick);
+	*nick = '\0';
+}
+
+void
+recv_join(char *who, char *chan, char *txt) {
+	Buffer *b;
+
+	if(!strcmp(who, nick)) {
+		sel = newbuf(chan);
+		b = sel;
+	}
+	else {
+		b = getbuf(chan);
+	}
+	printb(b, "JOIN %s\n", who);
+	if(b == sel)
+		sel->need_redraw = 1;
+}
+
+void
+recv_mode(char *u, char *val, char *u2) {
+	if(*nick)
+		return;
+	strcpy(nick, val);
+}
+
+void
+recv_motd(char *u, char *u2, char *txt) {
+	printb(status, "%s\n", txt);
+}
+
+void
+recv_nick(char *who, char *u, char *txt) {
+	if(!strcmp(who, nick))
+		strcpy(nick, txt);
+	printb(sel, "NICK %s: %s\n", who, txt);
+	sel->need_redraw = 1;
+}
+
+void
+recv_notice(char *who, char *u, char *txt) {
+	printb(sel, "NOTICE: %s: %s\n", who, txt);
+	sel->need_redraw = 1;
+}
+
+void
+recv_part(char *who, char *chan, char *txt) {
+	Buffer *b = getbuf(chan);
+
+	/* cmd_close() destroys the buffer before PART is received */
+	if(!b)
+		return;
+	if(!strcmp(who, nick)) {
+		if(b == sel) {
+			sel = sel->next ? sel->next : buffers;
+			sel->need_redraw = 1;
+		}
+		detach(b);
+		free(b);
+	}
+	else {
+		printb(b, "PART %s %s\n", who, txt);
+		if(b == sel)
+			sel->need_redraw = 1;
+	}
+}
+
+void
+recv_ping(char *u, char *u2, char *txt) {
+	sout("PONG %s", txt);
+}
+
+void
+recv_privmsg(char *from, char *to, char *txt) {
+	Buffer *b;
+
+	if(!strcmp(nick, to))
+		to = from;
+	b = getbuf(to);
+	if(!b)
+		b = newbuf(to);
+	printb(b, "%s: %s\n", from, txt);
+	if(b == sel)
+		sel->need_redraw = 1;
+}
+
+void
+recv_quit(char *who, char *u, char *txt) {
+	printb(sel, "QUIT %s (%s)\n", who, txt);
+}
+
+void
+recv_topic(char *who, char *chan, char *txt) {
+	printb(getbuf(chan), "%s changed topic to %s\n", who, txt);
+}
+
+void
+recv_topicrpl(char *usr, char *par, char *txt) {
+	char *chan = skip(par, ' ');
+	printb(sel, "Topic on %s is %s\n", chan, txt);
+}
+
+void
+recv_users(char *usr, char *par, char *txt) {
+	char *chan = skip(par, '@') + 1;
+	printb(sel, "Users in %s: %s\n", chan, txt);
 }
 
 void
@@ -779,7 +856,7 @@ scroll(const Arg *arg) {
 	if(arg->i == 0) {
 		sel->line = 0;
 		sel->lnoff = 0;
-		draw();
+		sel->need_redraw = 1;
 		return;
 	}
 	if(!sel->line)
@@ -795,7 +872,7 @@ scroll(const Arg *arg) {
 			"len=%d line=%d size=%d lnoff=%d char='%c' nlines=%d\n",
 			sel->len, sel->line, sel->size, sel->lnoff, sel->data[sel->lnoff], sel->nlines);
 	}
-	draw();
+	sel->need_redraw = 1;
 }
 
 void
@@ -826,7 +903,7 @@ sigwinch(int unused) {
 
 	ioctl(0, TIOCGWINSZ, &ws);
 	resize(ws.ws_row, ws.ws_col);
-	draw();
+	sel->need_redraw = 1;
 }
 
 char *
@@ -894,7 +971,7 @@ usrin(void) {
 				privmsg(sel->name, sel->cmd);
 		}
 		sel->cmd[sel->cmdlen = sel->cmdoff = 0] = '\0';
-		draw();
+		sel->need_redraw = 1;
 	}
 	else if(isgraph(key) || (key == ' ' && sel->cmdlen)) {
 		if(sel->cmdlen == sizeof sel->cmd)
@@ -905,7 +982,7 @@ usrin(void) {
 		sel->cmd[++sel->cmdlen] = '\0';
 		if(sel->cmdoff < sizeof sel->cmd - 1)
 			++sel->cmdoff;
-		drawcmdln();
+		sel->need_redraw = 1;
 	}
 }
 
@@ -970,6 +1047,10 @@ main(int argc, char *argv[]) {
 			parsesrv();
 		if(FD_ISSET(0, &rd))
 			usrin();
+		if(sel->need_redraw) {
+			draw();
+			sel->need_redraw = 0;
+		}
 	}
 	mvprintf(1, cols, "\n");
 	cleanup();
