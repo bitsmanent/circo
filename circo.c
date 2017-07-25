@@ -164,10 +164,8 @@ Message messages[] = {
 
 	/* ignored */
 	{ "PONG",    NULL },
-	{ "366",     NULL }, /* end of names */
-	{ "375",     NULL }, /* motd start */
-	{ "376",     NULL }, /* motd end */
 	{ "470",     NULL }, /* channel forward */
+
 };
 
 char *host = "irc.freenode.org";
@@ -292,7 +290,6 @@ cmd_server(char *cmd, char *s) {
 	srv = fdopen(dial(h, p), "r+");
 	if(!srv) {
 		printb(status, "Cannot connect to %s on port %s\n", h, p);
-		sel->need_redraw = 1;
 		return;
 	}
 	setbuf(srv, NULL);
@@ -668,9 +665,10 @@ parsesrv(void) {
 		if(!strcmp(messages[i].name, cmd)) {
 			if(messages[i].func)
 				messages[i].func(usr, par, txt);
-			break;
+			return;
 		}
 	}
+	printb(sel, "%s %s\n", par, txt);
 }
 
 int
@@ -745,14 +743,12 @@ recv_nick(char *who, char *u, char *txt) {
 	if(!strcmp(who, nick))
 		strcpy(nick, txt);
 	printb(sel, "NICK %s: %s\n", who, txt);
-	sel->need_redraw = 1;
 }
 
 void
 recv_notice(char *who, char *u, char *txt) {
 	/* XXX redirect to the relative buffer, if possible */
 	printb(sel, "NOTICE: %s: %s\n", who, txt);
-	sel->need_redraw = 1;
 }
 
 void
@@ -772,8 +768,6 @@ recv_part(char *who, char *chan, char *txt) {
 	}
 	else {
 		printb(b, "PART %s %s\n", who, txt);
-		if(b == sel)
-			sel->need_redraw = 1;
 	}
 }
 
@@ -792,8 +786,6 @@ recv_privmsg(char *from, char *to, char *txt) {
 	if(!b)
 		b = newbuf(to);
 	printb(b, "%s: %s\n", from, txt);
-	if(b == sel)
-		sel->need_redraw = 1;
 }
 
 void
