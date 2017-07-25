@@ -211,7 +211,7 @@ bufpos(char *buf, int len, int *line, int *off) {
 	int set = 0, x, y, i;
 
 	for(i = 0, x = y = 1; i < len; ++i) {
-		if(!set && line && off) {
+		if(!set && line && off != -1) {
 			if(*off == i) {
 				if(*line < 1)
 					*line = y;
@@ -770,6 +770,7 @@ recv_nick(char *who, char *u, char *txt) {
 
 void
 recv_notice(char *who, char *u, char *txt) {
+	/* XXX redirect to the relative buffer, if possible */
 	printb(sel, "NOTICE: %s: %s\n", who, txt);
 	sel->need_redraw = 1;
 }
