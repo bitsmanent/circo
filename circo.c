@@ -211,7 +211,7 @@ bufpos(char *buf, int len, int *line, int *off) {
 	int set = 0, x, y, i;
 
 	for(i = 0, x = y = 1; i < len; ++i) {
-		if(!set && line && off != -1) {
+		if(!set && line && off) {
 			if(*off == i) {
 				if(*line < 1)
 					*line = y;
