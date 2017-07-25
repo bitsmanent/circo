@@ -3,6 +3,9 @@
 /* Timestamp format; see strftime(3). */
 #define TIMESTAMP_FORMAT "%Y-%m-%d %T | "
 
+/* Used if no message is specified */
+#define QUIT_MESSAGE "circo"
+
 Command commands[] = {
 	/* command     function */
 	{ "close",     cmd_close },

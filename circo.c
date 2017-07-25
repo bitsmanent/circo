@@ -267,7 +267,7 @@ cmd_msg(char *cmd, char *s) {
 void
 cmd_quit(char *cmd, char *s) {
 	if(srv)
-		sout("QUIT%s%s", s ? " :" : "", s ? s : "");
+		sout("QUIT :%s", s ? s : QUIT_MESSAGE);
 	running = 0;
 }
 
