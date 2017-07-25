@@ -208,8 +208,7 @@ bufinfo(char *buf, int len, int val, int act) {
 		else
 			++x;
 	}
-	/* TotalLines */
-	return y - 1;
+	return y - 1; /* TotalLines */
 }
 
 void
@@ -686,7 +685,7 @@ printb(Buffer *b, char *fmt, ...) {
 	len += vsnprintf(&buf[len], sizeof(buf) - len, fmt, ap);
 	va_end(ap);
 	if(!b->size || b->len >= b->size)
-		if(!(b->data = realloc(b->data, b->size += len))) /* XXX optimize */
+		if(!(b->data = realloc(b->data, b->size += len + BUFSZ)))
 			die("cannot realloc\n");
 	memcpy(&b->data[b->len], buf, len);
 	b->len += len;
@@ -915,45 +914,45 @@ void
 usrin(void) {
 	int key = getkey(), i;
 
-	for(i = 0; i < LENGTH(keys); ++i)
-		if(keys[i].key == key)
-			break;
-	if(i < LENGTH(keys)) {
-		keys[i].func(&keys[i].arg);
-		while(getkey() != EOF); /* discard remaining input */
-		return;
-	}
-	if(key == '\n') {
-		logw(sel->cmd);
-		if(sel->cmd[0] == '\0')
+	for(i = 0; i < LENGTH(keys); ++i) {
+		if(keys[i].key == key) {
+			keys[i].func(&keys[i].arg);
 			return;
-		if(sel->cmd[0] == '/') {
-			if(sel->cmdlen == 1)
+		}
+	}
+	do {
+		if(key == '\n') {
+			logw(sel->cmd);
+			if(sel->cmd[0] == '\0')
 				return;
-			parsecmd();
+			if(sel->cmd[0] == '/') {
+				if(sel->cmdlen == 1)
+					return;
+				parsecmd();
+			}
+			else {
+				if(sel == status)
+					printb(sel, "Cannot send text here.\n");
+				else if(!srv)
+					printb(sel, "You're not connected.\n");
+				else
+					privmsg(sel->name, sel->cmd);
+			}
+			sel->cmd[sel->cmdlen = sel->cmdoff = 0] = '\0';
+			sel->need_redraw = 1;
 		}
-		else {
-			if(sel == status)
-				printb(sel, "Cannot send text here.\n");
-			else if(!srv)
-				printb(sel, "You're not connected.\n");
-			else
-				privmsg(sel->name, sel->cmd);
+		else if(isgraph(key) || (key == ' ' && sel->cmdlen)) {
+			if(sel->cmdlen == sizeof sel->cmd)
+				return;
+			memmove(&sel->cmd[sel->cmdoff+1], &sel->cmd[sel->cmdoff],
+				sel->cmdlen - sel->cmdoff);
+			sel->cmd[sel->cmdoff] = key;
+			sel->cmd[++sel->cmdlen] = '\0';
+			if(sel->cmdoff < sizeof sel->cmd - 1)
+				++sel->cmdoff;
+			sel->need_redraw = 1;
 		}
-		sel->cmd[sel->cmdlen = sel->cmdoff = 0] = '\0';
-		sel->need_redraw = 1;
-	}
-	else if(isgraph(key) || (key == ' ' && sel->cmdlen)) {
-		if(sel->cmdlen == sizeof sel->cmd)
-			return;
-		memmove(&sel->cmd[sel->cmdoff+1], &sel->cmd[sel->cmdoff],
-			sel->cmdlen - sel->cmdoff);
-		sel->cmd[sel->cmdoff] = key;
-		sel->cmd[++sel->cmdlen] = '\0';
-		if(sel->cmdoff < sizeof sel->cmd - 1)
-			++sel->cmdoff;
-		sel->need_redraw = 1;
-	}
+	} while((key = getkey()) != -1);
 }
 
 int
