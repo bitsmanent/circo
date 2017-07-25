@@ -847,11 +847,6 @@ scroll(const Arg *arg) {
 	else if(sel->line > sel->nlines)
 		sel->line = sel->nlines;
 	sel->lnoff = bufinfo(sel->data, sel->len, sel->line, LineToOffset);
-	if(sel->lnoff == -1) {
-		die("This is a bug.\n"
-			"len=%d line=%d size=%d lnoff=%d char='%c' nlines=%d\n",
-			sel->len, sel->line, sel->size, sel->lnoff, sel->data[sel->lnoff], sel->nlines);
-	}
 	sel->need_redraw = 1;
 }
 
