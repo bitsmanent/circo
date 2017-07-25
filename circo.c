@@ -21,8 +21,8 @@
 char *argv0;
 
 /* macros */
-#define LENGTH(X)	(sizeof X / sizeof X[0])
-#define BUFSZ		512
+#define LENGTH(X)       (sizeof X / sizeof X[0])
+#define BUFSZ           512
 
 /* VT100 escape sequences */
 #define CLEAR           "\33[2J"
@@ -31,6 +31,7 @@ char *argv0;
 #define CURPOS          "\33[%d;%dH"
 #define CURSON          "\33[?25h"
 #define CURSOFF         "\33[?25l"
+#define TTLSET          "\33]0;%s\007"
 
 #if defined CTRL && defined _AIX
   #undef CTRL
@@ -983,8 +984,8 @@ main(int argc, char *argv[]) {
 
 	if(!*nick)
 		strncpy(nick, user ? user : "unknown", sizeof nick);
+	printf(TTLSET, "circo");
 	setup();
-
 	if(*logfile)
 		logp = fopen(logfile, "a");
 	sel = status = newbuf("status");
