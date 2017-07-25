@@ -680,11 +680,11 @@ printb(Buffer *b, char *fmt, ...) {
 	int len = 0;
 
 	tm = time(NULL);
-        len = strftime(buf, sizeof buf - len, TIMESTAMP_FORMAT, localtime(&tm));
+        len = strftime(buf, sizeof(buf), TIMESTAMP_FORMAT, localtime(&tm));
 	va_start(ap, fmt);
-	len += vsnprintf(&buf[len], sizeof(buf) - len, fmt, ap);
+	len += vsnprintf(&buf[len], sizeof(buf) - len - 1, fmt, ap);
 	va_end(ap);
-	if(!b->size || b->len >= b->size)
+	if(!b->size || b->len + len >= b->size)
 		if(!(b->data = realloc(b->data, b->size += len + BUFSZ)))
 			die("cannot realloc\n");
 	memcpy(&b->data[b->len], buf, len);
