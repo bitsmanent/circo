@@ -41,6 +41,7 @@ char *argv0;
 
 /* enums */
 enum { KeyUp = -50, KeyDown, KeyRight, KeyLeft, KeyHome, KeyEnd, KeyDel, KeyPgUp, KeyPgDw, KeyBackspace };
+enum { LineToOffset, OffsetToLine, TotalLines }; /* bufinfo() flags */
 
 typedef union {
 	int i;
@@ -83,9 +84,7 @@ typedef struct {
 
 /* function declarations */
 void attach(Buffer *b);
-int bufl2o(char *buf, int len, int line);
-int bufnl(char *buf, int len);
-int bufpos(char *buf, int len, int *line, int *off);
+int bufinfo(char *buf, int len, int val, int act);
 void cleanup(void);
 void cmd_close(char *cmd, char *s);
 void cmd_msg(char *cmd, char *s);
@@ -186,42 +185,19 @@ attach(Buffer *b) {
 }
 
 int
-bufl2o(char *buf, int len, int line) {
-	int off = -1;
-
-	bufpos(buf, len, &line, &off);
-	return off;
-}
-
-int
-bufnl(char *buf, int len) {
-	return bufpos(buf, len, NULL, NULL);
-}
-
-/*
- * Note: this function is weird and will be removed. I wrote it to enforce DRY.
- *
- * Expected cases:
- * - line < 1: set *line to the line corresponding to the given offset
- * - line > 0: set *off to the offset corresponding to the given line
- * Return the number of lines.
-*/
-int
-bufpos(char *buf, int len, int *line, int *off) {
-	int set = 0, x, y, i;
+bufinfo(char *buf, int len, int val, int act) {
+	int x, y, i;
 
 	for(i = 0, x = y = 1; i < len; ++i) {
-		if(!set && line && off) {
-			if(*off == i) {
-				if(*line < 1)
-					*line = y;
-				set = 1;
-			}
-			else if(*line == y) {
-				if(*line > 0)
-					*off = i;
-				set = 1;
-			}
+		switch(act) {
+		case LineToOffset:
+			if(val == y)
+				return i;
+			break;
+		case OffsetToLine:
+			if(val == i)
+				return y;
+			break;
 		}
 		if(x == cols || buf[i] == '\n') {
 			if(buf[i] != '\n' && i < len - 1 && buf[i + 1] == '\n')
@@ -232,6 +208,7 @@ bufpos(char *buf, int len, int *line, int *off) {
 		else
 			++x;
 	}
+	/* TotalLines */
 	return y - 1;
 }
 
@@ -492,9 +469,11 @@ drawbuf(void) {
 
 	if(!sel->len)
 		return;
+	x = rows - 2;
+	y = sel->nlines - x;
 	i = sel->line
 		? sel->lnoff
-		: bufl2o(sel->data, sel->len, 1 + (sel->nlines > rows - 2 ? sel->nlines - (rows - 2) : 0));
+		: bufinfo(sel->data, sel->len, 1 + (sel->nlines > x ? y : 0), LineToOffset);
 	x = 1;
 	y = 2;
 	printf(CURSOFF);
@@ -710,7 +689,7 @@ printb(Buffer *b, char *fmt, ...) {
 			die("cannot realloc\n");
 	memcpy(&b->data[b->len], buf, len);
 	b->len += len;
-	b->nlines = bufnl(b->data, b->len);
+	b->nlines = bufinfo(b->data, b->len, 0, TotalLines);
 	b->need_redraw = 1;
 	logw(buf);
 	return len;
@@ -844,8 +823,8 @@ resize(int x, int y) {
 	cols = y;
 	if(sel) {
 		if(sel->line && sel->lnoff)
-			sel->lnoff = bufl2o(sel->data, sel->len, sel->line);
-		sel->nlines = bufnl(sel->data, sel->len);
+			sel->lnoff = bufinfo(sel->data, sel->len, sel->line, LineToOffset);
+		sel->nlines = bufinfo(sel->data, sel->len, 0, TotalLines);
 		draw();
 	}
 }
@@ -867,7 +846,7 @@ scroll(const Arg *arg) {
 		sel->line = 1;
 	else if(sel->line > sel->nlines)
 		sel->line = sel->nlines;
-	sel->lnoff = bufl2o(sel->data, sel->len, sel->line);
+	sel->lnoff = bufinfo(sel->data, sel->len, sel->line, LineToOffset);
 	if(sel->lnoff == -1) {
 		die("This is a bug.\n"
 			"len=%d line=%d size=%d lnoff=%d char='%c' nlines=%d\n",
