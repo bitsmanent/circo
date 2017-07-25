@@ -22,6 +22,7 @@ char *argv0;
 
 /* macros */
 #define LENGTH(X)	(sizeof X / sizeof X[0])
+#define BUFSZ		512
 
 /* VT100 escape sequences */
 #define CLEAR           "\33[2J"
@@ -54,7 +55,7 @@ typedef struct Buffer Buffer;
 struct Buffer {
 	char *data;
 	char name[256];
-	char cmd[512];
+	char cmd[BUFSZ];
 	int size;
 	int len;
 	int line;
@@ -638,7 +639,7 @@ parsecmd(void) {
 void
 parsesrv(void) {
 	char *cmd, *usr, *par, *txt;
-	char buf[4096]; /* XXX size */
+	char buf[BUFSZ];
 
 	if(fgets(buf, sizeof buf, srv) == NULL) {
 		srv = NULL;
@@ -675,7 +676,7 @@ parsesrv(void) {
 int
 printb(Buffer *b, char *fmt, ...) {
 	va_list ap;
-	char buf[1024 + 80]; /* 80 should be enough for the timestring... */
+	char buf[BUFSZ + 80]; /* 80 should be enough for the timestring... */
 	time_t tm;
 	int len = 0;
 
@@ -893,7 +894,7 @@ skip(char *s, char c) {
 void
 sout(char *fmt, ...) {
 	va_list ap;
-	char buf[512];
+	char buf[BUFSZ];
 
 	va_start(ap, fmt);
 	vsnprintf(buf, sizeof buf, fmt, ap);
