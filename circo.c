@@ -917,6 +917,7 @@ usrin(void) {
 	for(i = 0; i < LENGTH(keys); ++i) {
 		if(keys[i].key == key) {
 			keys[i].func(&keys[i].arg);
+			while(getkey() != -1); /* discard remaining input */
 			return;
 		}
 	}
