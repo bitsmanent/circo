@@ -668,6 +668,7 @@ parsesrv(void) {
 			return;
 		}
 	}
+	par = skip(par, ' ');
 	printb(sel, "%s %s\n", par, txt);
 }
 
