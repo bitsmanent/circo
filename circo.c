@@ -228,13 +228,7 @@ void
 cmd_close(char *cmd, char *s) {
 	Buffer *b;
 
-	if(*s) {
-		b = getbuf(s);
-	}
-	else {
-		b = sel;
-		s = b->name;
-	}
+	b = *s ? getbuf(s) : sel;
 	if(!b) {
 		printb(status, "%s: unknown buffer.\n", s);
 		return;
@@ -243,8 +237,8 @@ cmd_close(char *cmd, char *s) {
 		printb(status, "Cannot close the status.\n");
 		return;
 	}
-	if(*s == '#' || *s == '&')
-		sout("PART :%s", s);
+	if(b->name[0] == '#' || b->name[0] == '&')
+		sout("PART :%s", b->name);
 	if(b == sel)
 		sel = sel->next ? sel->next : buffers;
 	detach(b);
