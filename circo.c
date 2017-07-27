@@ -829,6 +829,7 @@ resize(int x, int y) {
 		if(sel->line && sel->lnoff)
 			sel->lnoff = bufinfo(sel->data, sel->len, sel->line, LineToOffset);
 		sel->nlines = bufinfo(sel->data, sel->len, 0, TotalLines);
+		printf(CLEAR);
 		draw();
 	}
 }
