@@ -253,8 +253,14 @@ cmd_msg(char *cmd, char *s) {
 		printb(sel, "You're offline.\n");
 		return;
 	}
+	trim(s);
 	to = s;
 	txt = skip(to, ' ');
+	if(!(*to && *txt)) {
+		printb(sel, "Usage: /%s <channel or user> <text>\n", cmd);
+		return;
+	}
+
 	privmsg(to, txt);
 }
 
