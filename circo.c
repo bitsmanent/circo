@@ -496,12 +496,16 @@ drawbuf(void) {
 
 void
 drawcmdln(void) {
-	int pslen = 4 + strlen(sel->name); /* "[%s] " + 1 for the cursor */
+	int pslen = 3 + strlen(sel->name); /* "[%s] " */
 	int cmdsz = cols - pslen;
-	int i = sel->cmdlen > cmdsz ? sel->cmdlen - cmdsz : 0;
+	int cur = pslen + (sel->cmdoff % cmdsz) + 1;
+	int i = cmdsz * (sel->cmdoff / cmdsz);
+	int len;
+	char buf[cols+1];
 
-	mvprintf(1, rows, "[%s] %s%s", sel->name, &sel->cmd[i], CLEARRIGHT);
-	printf(CURPOS, rows, pslen + (sel->cmdoff - i));
+	len = snprintf(buf, sizeof buf, "[%s] %s", sel->name, &sel->cmd[i]);
+	mvprintf(1, rows, "%s%s", buf, len < cols ? CLEARRIGHT : "");
+	printf(CURPOS, rows, cur);
 }
 
 void *
@@ -938,8 +942,11 @@ usrin(void) {
 			sel->need_redraw = 1;
 		}
 		else if(isgraph(key) || (key == ' ' && sel->cmdlen)) {
-			if(sel->cmdlen == sizeof sel->cmd)
+			if(sel->cmdlen == sizeof sel->cmd) {
+				sel->cmd[sel->cmdoff] = key;
+				sel->need_redraw = 1;
 				return;
+			}
 			memmove(&sel->cmd[sel->cmdoff+1], &sel->cmd[sel->cmdoff],
 				sel->cmdlen - sel->cmdoff);
 			sel->cmd[sel->cmdoff] = key;
