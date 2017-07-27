@@ -450,17 +450,22 @@ draw(void) {
 
 void
 drawbar(void) {
-	/* XXX truncate to cols */
-	mvprintf(1, 1, "%s@%s:%s - %s%s%s",
+	char buf[cols+1];
+	int len;
+
+	if(!(cols && rows))
+		return;
+	len = snprintf(buf, sizeof buf, "%s@%s:%s - %s%s",
 		srv ? nick : "", srv ? host : "", srv ? port : "",
-		sel->name, sel->line ? " [scrolled]" : "", CLEARRIGHT);
+		sel->name, sel->line ? " [scrolled]" : "");
+	mvprintf(1, 1, "%s%s", buf, len < cols ? CLEARRIGHT : "");
 }
 
 void
 drawbuf(void) {
 	int x, y, c, i;
 
-	if(!sel->len)
+	if(!(cols && rows && sel->len))
 		return;
 	x = rows - 2;
 	y = sel->nlines - x;
@@ -496,13 +501,19 @@ drawbuf(void) {
 
 void
 drawcmdln(void) {
-	int pslen = 3 + strlen(sel->name); /* "[%s] " */
-	int cmdsz = cols - pslen;
-	int cur = pslen + (sel->cmdoff % cmdsz) + 1;
-	int i = cmdsz * (sel->cmdoff / cmdsz);
-	int len;
 	char buf[cols+1];
+	int pslen, cmdsz, cur, i, len;
 
+	if(!(cols && rows))
+		return;
+	pslen = 3 + strlen(sel->name); /* "[%s] " */
+	cmdsz = pslen < cols ? cols - pslen : 0;
+	if(!cmdsz) {
+		printf(CURPOS, rows, cols);
+		return;
+	}
+	cur = pslen + (sel->cmdoff % cmdsz) + 1;
+	i = cmdsz * (sel->cmdoff / cmdsz);
 	len = snprintf(buf, sizeof buf, "[%s] %s", sel->name, &sel->cmd[i]);
 	mvprintf(1, rows, "%s%s", buf, len < cols ? CLEARRIGHT : "");
 	printf(CURPOS, rows, cur);
