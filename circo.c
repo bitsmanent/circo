@@ -109,6 +109,7 @@ void *ecalloc(size_t nmemb, size_t size);
 Buffer *getbuf(char *name);
 void focusnext(const Arg *arg);
 void focusprev(const Arg *arg);
+void freebuf(Buffer *b);
 int getkey(void);
 void logw(char *txt);
 int mvprintf(int x, int y, char *fmt, ...);
@@ -218,8 +219,8 @@ cleanup(void) {
 	while(buffers) {
 		b = buffers;
 		buffers = buffers->next;
-		free(b->data);
-		free(b);
+		detach(b);
+		freebuf(b);
 	}
 	tcsetattr(0, TCSANOW, &origti);
 }
@@ -242,7 +243,7 @@ cmd_close(char *cmd, char *s) {
 	if(b == sel)
 		sel = sel->next ? sel->next : buffers;
 	detach(b);
-	free(b);
+	freebuf(b);
 }
 
 void
@@ -558,6 +559,12 @@ focusprev(const Arg *arg) {
 	sel->need_redraw = 1;
 }
 
+void
+freebuf(Buffer *b) {
+	free(b->data);
+	free(b);
+}
+
 Buffer *
 getbuf(char *name) {
 	Buffer *b;
@@ -783,7 +790,7 @@ recv_part(char *who, char *chan, char *txt) {
 			sel->need_redraw = 1;
 		}
 		detach(b);
-		free(b);
+		freebuf(b);
 	}
 	else {
 		printb(b, "PART %s %s\n", who, txt);
@@ -844,8 +851,6 @@ resize(int x, int y) {
 
 void
 scroll(const Arg *arg) {
-	if(!sel->len)
-		return;
 	if(arg->i == 0) {
 		sel->line = 0;
 		sel->lnoff = 0;
