@@ -514,12 +514,14 @@ drawcmdln(void) {
 		return;
 	pslen = 3 + strlen(sel->name); /* "[%s] " */
 	cmdsz = pslen < cols ? cols - pslen : 0;
-	if(!cmdsz) {
-		printf(CURPOS, rows, cols);
-		return;
+	if(cmdsz) {
+		cur = pslen + (sel->cmdoff % cmdsz) + 1;
+		i = cmdsz ? cmdsz * (sel->cmdoff / cmdsz) : 0;
 	}
-	cur = pslen + (sel->cmdoff % cmdsz) + 1;
-	i = cmdsz * (sel->cmdoff / cmdsz);
+	else {
+		cur = cols;
+		i = 0;
+	}
 	len = snprintf(buf, sizeof buf, "[%s] %s", sel->name, &sel->cmd[i]);
 	mvprintf(1, rows, "%s%s", buf, len < cols ? CLEARRIGHT : "");
 	printf(CURPOS, rows, cur);
