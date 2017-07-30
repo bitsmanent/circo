@@ -34,4 +34,6 @@ static Key keys[] = {
         { KeyPgUp,        scroll,           {.i = -1} },
         { KeyPgDw,        scroll,           {.i = +1} },
         { KeyEnd,         scroll,           {.i = 0} },
+        { KeyUp,          history,          {.i = -1} },
+        { KeyDown,        history,          {.i = +1} },
 };

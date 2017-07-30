@@ -57,6 +57,7 @@ struct Buffer {
 	char *data;
 	char name[256];
 	char cmd[BUFSZ];
+	char *hist;
 	int size;
 	int len;
 	int line;
@@ -64,6 +65,9 @@ struct Buffer {
 	int lnoff;
 	int cmdlen;
 	int cmdoff;
+	int histsz;
+	int histlen;
+	int histlnoff;
 	int need_redraw;
 	Buffer *next;
 };
@@ -111,6 +115,8 @@ void focusnext(const Arg *arg);
 void focusprev(const Arg *arg);
 void freebuf(Buffer *b);
 int getkey(void);
+void history(const Arg *arg);
+void histpush(char *buf, int len);
 void logw(char *txt);
 int mvprintf(int x, int y, char *fmt, ...);
 Buffer *newbuf(char *name);
@@ -377,10 +383,14 @@ cmdln_cursor(const Arg *arg) {
 	}
 	else {
 		sel->cmdoff += arg->i;
-		if(sel->cmdoff < 0)
+		if(sel->cmdoff < 0) {
 			sel->cmdoff = 0;
-		else if(sel->cmdoff > sel->cmdlen)
-			sel->cmdoff = sel->cmdlen;
+		}
+		else if(sel->cmdoff > sel->cmdlen - 1) {
+			sel->cmdoff = sel->cmdlen - 1;
+			if(sel->cmdlen < sizeof sel->cmd - 1)
+				++sel->cmdoff;
+		}
 	}
 	sel->need_redraw = 1;
 }
@@ -605,6 +615,59 @@ getkey(void) {
 }
 
 void
+history(const Arg *arg) {
+	int nl, n, i;
+
+	if(!sel->histsz)
+		return;
+	for(i = nl = 0; i < sel->histsz; i += strlen(&sel->hist[i]) + 2, ++nl);
+	if(!sel->histlnoff) {
+		if(sel->cmdlen) {
+			histpush(sel->cmd, sel->cmdlen);
+			/* don't ++nl since the line has to be skipped */
+		}
+		sel->histlnoff = nl+1;
+	}
+	n = sel->histlnoff + arg->i;
+	if(n < 1)
+		n = 1;
+	else if(n > nl)
+		n = 0;
+	sel->histlnoff = n;
+	if(sel->histlnoff) {
+		for(i = 0; i < sel->histsz && --n; i += strlen(&sel->hist[i]) + 2);
+		sel->cmdlen = strlen(&sel->hist[i]);
+		memcpy(sel->cmd, &sel->hist[i], sel->cmdlen);
+	}
+	else {
+		sel->cmdlen = 0;
+	}
+	sel->cmdoff = 0;
+	sel->cmd[sel->cmdlen] = '\0';
+	drawcmdln();
+}
+
+void
+histpush(char *buf, int len) {
+	int nl, i;
+
+	/* do not clone unchanged lines */
+	if(sel->histlnoff) {
+		for(i = 0, nl = 1; i < sel->histsz && nl != sel->histlnoff; i += strlen(&sel->hist[i]) + 2, ++nl);
+		if(!memcmp(&sel->hist[i], buf, len))
+			return;
+	}
+	if((i = sel->histsz)) {
+		++i;
+		++sel->histsz;
+	}
+	if(!(sel->hist = realloc(sel->hist, (sel->histsz += len + 1))))
+		die("Cannot realloc\n");
+	memcpy(&sel->hist[i], buf, len);
+	sel->hist[i + len] = '\0';
+}
+
+void
 logw(char *txt) {
 	if(!logp)
 		return;
@@ -711,7 +774,7 @@ printb(Buffer *b, char *fmt, ...) {
 	va_end(ap);
 	if(!b->size || b->len + len >= b->size)
 		if(!(b->data = realloc(b->data, b->size += len + BUFSZ)))
-			die("cannot realloc\n");
+			die("Cannot realloc\n");
 	memcpy(&b->data[b->len], buf, len);
 	b->len += len;
 	b->nlines = bufinfo(b->data, b->len, 0, TotalLines);
@@ -953,9 +1016,11 @@ usrin(void) {
 			if(sel->cmd[0] == '/') {
 				if(sel->cmdlen == 1)
 					return;
+				histpush(sel->cmd, sel->cmdlen);
 				parsecmd();
 			}
 			else {
+				histpush(sel->cmd, sel->cmdlen);
 				if(sel == status)
 					printb(sel, "Cannot send text here.\n");
 				else if(!srv)
@@ -963,11 +1028,11 @@ usrin(void) {
 				else
 					privmsg(sel->name, sel->cmd);
 			}
-			sel->cmd[sel->cmdlen = sel->cmdoff = 0] = '\0';
+			sel->cmd[sel->cmdlen = sel->cmdoff = sel->histlnoff = 0] = '\0';
 			sel->need_redraw = 1;
 		}
 		else if(isgraph(key) || (key == ' ' && sel->cmdlen)) {
-			if(sel->cmdlen == sizeof sel->cmd) {
+			if(sel->cmdlen == sizeof sel->cmd - 1) {
 				sel->cmd[sel->cmdoff] = key;
 				sel->need_redraw = 1;
 				return;
@@ -976,7 +1041,7 @@ usrin(void) {
 				sel->cmdlen - sel->cmdoff);
 			sel->cmd[sel->cmdoff] = key;
 			sel->cmd[++sel->cmdlen] = '\0';
-			if(sel->cmdoff < sizeof sel->cmd - 1)
+			if(sel->cmdlen < sizeof sel->cmd - 1)
 				++sel->cmdoff;
 			sel->need_redraw = 1;
 		}
