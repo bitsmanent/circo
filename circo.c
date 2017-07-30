@@ -914,6 +914,10 @@ resize(int x, int y) {
 
 void
 scroll(const Arg *arg) {
+	int bufh = rows - 2;
+
+	if(sel->nlines <= bufh)
+		return;
 	if(arg->i == 0) {
 		sel->line = 0;
 		sel->lnoff = 0;
@@ -921,12 +925,12 @@ scroll(const Arg *arg) {
 		return;
 	}
 	if(!sel->line)
-		sel->line = sel->nlines;
+		sel->line = sel->nlines - bufh + 1;
 	sel->line += arg->i;
 	if(sel->line < 1)
 		sel->line = 1;
-	else if(sel->line > sel->nlines)
-		sel->line = sel->nlines;
+	else if(sel->line > sel->nlines - bufh)
+		sel->line = 0;
 	sel->lnoff = bufinfo(sel->data, sel->len, sel->line, LineToOffset);
 	sel->need_redraw = 1;
 }
