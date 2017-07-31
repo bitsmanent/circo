@@ -942,7 +942,7 @@ scroll(const Arg *arg) {
 	if(arg->i == 0) {
 		sel->line = 0;
 		sel->lnoff = 0;
-		sel->need_redraw |= REDRAW_BUFFER;
+		sel->need_redraw |= (REDRAW_BUFFER | REDRAW_BAR);
 		return;
 	}
 	if(!sel->line)
@@ -953,7 +953,7 @@ scroll(const Arg *arg) {
 	else if(sel->line > sel->nlines - bufh)
 		sel->line = 0;
 	sel->lnoff = bufinfo(sel->data, sel->len, sel->line, LineToOffset);
-	sel->need_redraw |= REDRAW_BUFFER;
+	sel->need_redraw |= (REDRAW_BUFFER | REDRAW_BAR);
 }
 
 void
