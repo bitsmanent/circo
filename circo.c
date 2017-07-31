@@ -906,8 +906,6 @@ resize(int x, int y) {
 		if(sel->line && sel->lnoff)
 			sel->lnoff = bufinfo(sel->data, sel->len, sel->line, LineToOffset);
 		sel->nlines = bufinfo(sel->data, sel->len, 0, TotalLines);
-		printf(CLEAR);
-		draw();
 	}
 }
 
@@ -962,7 +960,8 @@ sigwinch(int unused) {
 
 	ioctl(0, TIOCGWINSZ, &ws);
 	resize(ws.ws_row, ws.ws_col);
-	sel->need_redraw = 1;
+	printf(CLEAR);
+	draw();
 }
 
 char *
