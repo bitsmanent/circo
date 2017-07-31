@@ -24,6 +24,12 @@ char *argv0;
 #define LENGTH(X)       (sizeof X / sizeof X[0])
 #define BUFSZ           512
 
+/* drawing flags */
+#define REDRAW_BAR      1<<1
+#define REDRAW_BUFFER   1<<2
+#define REDRAW_CMDLN    1<<3
+#define REDRAW_ALL      (REDRAW_BAR|REDRAW_BUFFER|REDRAW_CMDLN)
+
 /* VT100 escape sequences */
 #define CLEAR           "\33[2J"
 #define CLEARLN         "\33[2K"
@@ -65,6 +71,7 @@ struct Buffer {
 	int lnoff;
 	int cmdlen;
 	int cmdoff;
+	int cmdcur;
 	int histsz;
 	int histlen;
 	int histlnoff;
@@ -244,8 +251,10 @@ cmd_close(char *cmd, char *s) {
 	}
 	if(b->name[0] == '#' || b->name[0] == '&')
 		sout("PART :%s", b->name);
-	if(b == sel)
+	if(b == sel) {
 		sel = sel->next ? sel->next : buffers;
+		sel->need_redraw |= REDRAW_ALL;
+	}
 	detach(b);
 	freebuf(b);
 }
@@ -265,7 +274,6 @@ cmd_msg(char *cmd, char *s) {
 		printb(sel, "Usage: /%s <channel or user> <text>\n", cmd);
 		return;
 	}
-
 	privmsg(to, txt);
 }
 
@@ -300,6 +308,7 @@ cmd_server(char *cmd, char *s) {
 	setbuf(srv, NULL);
 	sout("NICK %s", nick);
 	sout("USER %s localhost %s :%s", nick, h, nick);
+	sel->need_redraw |= REDRAW_BAR;
 }
 
 void
@@ -343,7 +352,7 @@ cmdln_chldel(const Arg *arg) {
 			sel->cmdlen - sel->cmdoff);
 	sel->cmd[--sel->cmdlen] = '\0';
 	--sel->cmdoff;
-	sel->need_redraw = 1;
+	sel->need_redraw |= REDRAW_CMDLN;
 }
 
 void
@@ -352,7 +361,7 @@ cmdln_chrdel(const Arg *arg) {
 		return;
 	if(sel->cmdoff == sel->cmdlen) {
 		--sel->cmdoff;
-		sel->need_redraw = 1;
+		sel->need_redraw |= REDRAW_CMDLN;
 		return;
 	}
 	memmove(&sel->cmd[sel->cmdoff], &sel->cmd[sel->cmdoff + 1],
@@ -360,7 +369,7 @@ cmdln_chrdel(const Arg *arg) {
 	sel->cmd[--sel->cmdlen] = '\0';
 	if(sel->cmdoff && sel->cmdoff == sel->cmdlen)
 		--sel->cmdoff;
-	sel->need_redraw = 1;
+	sel->need_redraw |= REDRAW_CMDLN;
 }
 
 void
@@ -371,7 +380,7 @@ cmdln_clear(const Arg *arg) {
 	sel->cmdlen -= sel->cmdoff;
 	sel->cmd[sel->cmdlen] = '\0';
 	sel->cmdoff = 0;
-	sel->need_redraw = 1;
+	sel->need_redraw |= REDRAW_CMDLN;
 }
 
 void
@@ -390,7 +399,7 @@ cmdln_cursor(const Arg *arg) {
 				++sel->cmdoff;
 		}
 	}
-	sel->need_redraw = 1;
+	sel->need_redraw |= REDRAW_CMDLN;
 }
 
 void
@@ -411,7 +420,7 @@ cmdln_wdel(const Arg *arg) {
 	sel->cmdlen -= sel->cmdoff - i;
 	sel->cmd[sel->cmdlen] = '\0';
 	sel->cmdoff = i;
-	sel->need_redraw = 1;
+	sel->need_redraw |= REDRAW_CMDLN;
 }
 
 void
@@ -458,9 +467,14 @@ die(const char *errstr, ...) {
 
 void
 draw(void) {
-	drawbuf();
-	drawbar();
-	drawcmdln();
+	printf(CURSOFF);
+	if(sel->need_redraw & REDRAW_BAR)
+		drawbar();
+	if(sel->need_redraw & REDRAW_BUFFER)
+		drawbuf();
+	if(sel->need_redraw & REDRAW_CMDLN)
+		drawcmdln();
+	printf(CURPOS CURSON, rows, sel->cmdcur);
 }
 
 void
@@ -489,7 +503,6 @@ drawbuf(void) {
 		: bufinfo(sel->data, sel->len, 1 + (sel->nlines > x ? y : 0), LineToOffset);
 	x = 1;
 	y = 2;
-	printf(CURSOFF);
 	for(; i < sel->len; ++i) {
 		c = sel->data[i];
 		if(c != '\n' && x <= cols) {
@@ -511,7 +524,6 @@ drawbuf(void) {
 		while(++y < rows)
 			mvprintf(1, y, "%s", CLEARLN);
 	}
-	printf(CURSON);
 }
 
 void
@@ -531,9 +543,9 @@ drawcmdln(void) {
 		cur = cols;
 		i = 0;
 	}
+	sel->cmdcur = cur;
 	len = snprintf(buf, sizeof buf, "[%s] %s", sel->name, &sel->cmd[i]);
 	mvprintf(1, rows, "%s%s", buf, len < cols ? CLEARRIGHT : "");
-	printf(CURPOS, rows, cur);
 }
 
 void *
@@ -547,24 +559,32 @@ ecalloc(size_t nmemb, size_t size) {
 
 void
 focusnext(const Arg *arg) {
-	sel = sel->next ? sel->next : buffers;
-	sel->need_redraw = 1;
+	Buffer *nb;
+
+	nb = sel->next ? sel->next : buffers;
+	if(nb == sel)
+		return;
+	sel = nb;
+	sel->need_redraw |= REDRAW_ALL;
 }
 
 void 
 focusprev(const Arg *arg) {
-	Buffer *b;
+	Buffer *b, *nb;
 
 	if(sel == buffers) {
 		for(b = buffers; b; b = b->next)
-			sel = b;
+			nb = b;
 	}
 	else {
 		for(b = buffers; b && b->next; b = b->next)
 			if(b->next == sel)
-				sel = b;
+				nb = b;
 	}
-	sel->need_redraw = 1;
+	if(nb == sel)
+		return;
+	sel = nb;
+	sel->need_redraw |= REDRAW_ALL;
 }
 
 void
@@ -777,7 +797,7 @@ printb(Buffer *b, char *fmt, ...) {
 	memcpy(&b->data[b->len], buf, len);
 	b->len += len;
 	b->nlines = bufinfo(b->data, b->len, 0, TotalLines);
-	b->need_redraw = 1;
+	sel->need_redraw |= REDRAW_BUFFER;
 	logw(buf);
 	return len;
 }
@@ -796,6 +816,7 @@ void
 recv_busynick(char *u, char *u2, char *u3) {
 	printb(status, "%s is busy, choose a different /nick\n", nick);
 	*nick = '\0';
+	sel->need_redraw |= REDRAW_BAR;
 }
 
 void
@@ -811,7 +832,7 @@ recv_join(char *who, char *chan, char *txt) {
 	}
 	printb(b, "JOIN %s\n", who);
 	if(b == sel)
-		sel->need_redraw = 1;
+		sel->need_redraw |= REDRAW_ALL;
 }
 
 void
@@ -819,6 +840,7 @@ recv_mode(char *u, char *val, char *u2) {
 	if(*nick)
 		return;
 	strcpy(nick, val);
+	sel->need_redraw |= REDRAW_BAR;
 }
 
 void
@@ -828,8 +850,10 @@ recv_motd(char *u, char *u2, char *txt) {
 
 void
 recv_nick(char *who, char *u, char *txt) {
-	if(!strcmp(who, nick))
+	if(!strcmp(who, nick)) {
 		strcpy(nick, txt);
+		sel->need_redraw |= REDRAW_BAR;
+	}
 	printb(sel, "NICK %s: %s\n", who, txt);
 }
 
@@ -849,7 +873,7 @@ recv_part(char *who, char *chan, char *txt) {
 	if(!strcmp(who, nick)) {
 		if(b == sel) {
 			sel = sel->next ? sel->next : buffers;
-			sel->need_redraw = 1;
+			sel->need_redraw |= REDRAW_ALL;
 		}
 		detach(b);
 		freebuf(b);
@@ -918,7 +942,7 @@ scroll(const Arg *arg) {
 	if(arg->i == 0) {
 		sel->line = 0;
 		sel->lnoff = 0;
-		sel->need_redraw = 1;
+		sel->need_redraw |= REDRAW_BUFFER;
 		return;
 	}
 	if(!sel->line)
@@ -929,7 +953,7 @@ scroll(const Arg *arg) {
 	else if(sel->line > sel->nlines - bufh)
 		sel->line = 0;
 	sel->lnoff = bufinfo(sel->data, sel->len, sel->line, LineToOffset);
-	sel->need_redraw = 1;
+	sel->need_redraw |= REDRAW_BUFFER;
 }
 
 void
@@ -960,6 +984,7 @@ sigwinch(int unused) {
 
 	ioctl(0, TIOCGWINSZ, &ws);
 	resize(ws.ws_row, ws.ws_col);
+	sel->need_redraw = REDRAW_ALL;
 	printf(CLEAR);
 	draw();
 }
@@ -1001,6 +1026,7 @@ usage(void) {
 
 void
 usrin(void) {
+	Buffer *b;
 	int key = getkey(), i;
 
 	for(i = 0; i < LENGTH(keys); ++i) {
@@ -1012,6 +1038,7 @@ usrin(void) {
 	}
 	do {
 		if(key == '\n') {
+			b = sel;
 			logw(sel->cmd);
 			if(sel->cmd[0] == '\0')
 				return;
@@ -1019,6 +1046,8 @@ usrin(void) {
 				if(sel->cmdlen == 1)
 					return;
 				histpush(sel->cmd, sel->cmdlen);
+				/* Note: network latency may delay drawings
+				 * causing visual glitches. */
 				parsecmd();
 			}
 			else {
@@ -1030,13 +1059,15 @@ usrin(void) {
 				else
 					privmsg(sel->name, sel->cmd);
 			}
-			sel->cmd[sel->cmdlen = sel->cmdoff = sel->histlnoff = 0] = '\0';
-			sel->need_redraw = 1;
+			if(b == sel) {
+				b->cmd[sel->cmdlen = sel->cmdoff = sel->histlnoff = 0] = '\0';
+				b->need_redraw |= REDRAW_CMDLN;
+			}
 		}
 		else if(isgraph(key) || (key == ' ' && sel->cmdlen)) {
 			if(sel->cmdlen == sizeof sel->cmd - 1) {
 				sel->cmd[sel->cmdoff] = key;
-				sel->need_redraw = 1;
+				sel->need_redraw |= REDRAW_CMDLN;
 				return;
 			}
 			memmove(&sel->cmd[sel->cmdoff+1], &sel->cmd[sel->cmdoff],
@@ -1045,7 +1076,7 @@ usrin(void) {
 			sel->cmd[++sel->cmdlen] = '\0';
 			if(sel->cmdlen < sizeof sel->cmd - 1)
 				++sel->cmdoff;
-			sel->need_redraw = 1;
+			sel->need_redraw |= REDRAW_CMDLN;
 		}
 	} while((key = getkey()) != -1);
 }
@@ -1084,6 +1115,7 @@ main(int argc, char *argv[]) {
 		logp = fopen(logfile, "a");
 	sel = status = newbuf("status");
 	setbuf(stdout, NULL);
+	sel->need_redraw = REDRAW_ALL;
 	printf(CLEAR);
 	draw();
 	while(running) {
