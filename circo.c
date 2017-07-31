@@ -571,6 +571,7 @@ focusprev(const Arg *arg) {
 
 void
 freebuf(Buffer *b) {
+	free(b->hist);
 	free(b->data);
 	free(b);
 }
