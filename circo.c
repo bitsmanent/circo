@@ -663,7 +663,7 @@ history(const Arg *arg) {
 	}
 	sel->cmdoff = 0;
 	sel->cmd[sel->cmdlen] = '\0';
-	drawcmdln();
+	sel->need_redraw |= REDRAW_CMDLN;
 }
 
 void
