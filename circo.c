@@ -222,10 +222,8 @@ void
 cleanup(void) {
 	Buffer *b;
 
-	while(buffers) {
-		b = buffers;
+	while((b = buffers)) {
 		buffers = buffers->next;
-		detach(b);
 		freebuf(b);
 	}
 	tcsetattr(0, TCSANOW, &origti);
