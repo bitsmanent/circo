@@ -48,7 +48,7 @@ char *argv0;
 #define CTRL_ALT(k) ((k) + (129 - 'a'))
 
 /* enums */
-enum { KeyUp, KeyDown, KeyRight, KeyLeft, KeyHome, KeyEnd, KeyDel, KeyPgUp, KeyPgDw, KeyBackspace };
+enum { KeyUp = -50, KeyDown, KeyRight, KeyLeft, KeyHome, KeyEnd, KeyDel, KeyPgUp, KeyPgDw, KeyBackspace };
 enum { LineToOffset, OffsetToLine, TotalLines }; /* bufinfo() flags */
 
 typedef union {
