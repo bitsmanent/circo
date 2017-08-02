@@ -48,7 +48,7 @@ char *argv0;
 #define CTRL_ALT(k) ((k) + (129 - 'a'))
 
 /* enums */
-enum { KeyUp = -50, KeyDown, KeyRight, KeyLeft, KeyHome, KeyEnd, KeyDel, KeyPgUp, KeyPgDw, KeyBackspace };
+enum { KeyUp, KeyDown, KeyRight, KeyLeft, KeyHome, KeyEnd, KeyDel, KeyPgUp, KeyPgDw, KeyBackspace };
 enum { LineToOffset, OffsetToLine, TotalLines }; /* bufinfo() flags */
 
 typedef union {
@@ -249,7 +249,7 @@ cmd_close(char *cmd, char *s) {
 		printb(status, "Cannot close the status.\n");
 		return;
 	}
-	if(b->name[0] == '#' || b->name[0] == '&')
+	if(srv && (b->name[0] == '#' || b->name[0] == '&'))
 		sout("PART :%s", b->name);
 	if(b == sel) {
 		sel = sel->next ? sel->next : buffers;
@@ -924,12 +924,14 @@ recv_users(char *usr, char *par, char *txt) {
 
 void
 resize(int x, int y) {
+	Buffer *b;
+
 	rows = x;
 	cols = y;
-	if(sel) {
-		if(sel->line && sel->lnoff)
-			sel->lnoff = bufinfo(sel->data, sel->len, sel->line, LineToOffset);
-		sel->nlines = bufinfo(sel->data, sel->len, 0, TotalLines);
+	for(b = buffers; b; b = b->next) {
+		if(b->line && b->lnoff)
+			b->lnoff = bufinfo(b->data, b->len, b->line, LineToOffset);
+		b->nlines = bufinfo(b->data, b->len, 0, TotalLines);
 	}
 }
 
@@ -1132,7 +1134,7 @@ main(int argc, char *argv[]) {
 		if(n < 0) {
 			if(errno == EINTR)
 				continue;
-			die("circo: error on select()\n");
+			die("select()\n");
 		}
 		else if(n == 0) {
 			if(srv)
@@ -1148,7 +1150,7 @@ main(int argc, char *argv[]) {
 			sel->need_redraw = 0;
 		}
 	}
-	mvprintf(1, cols, "\n");
+	mvprintf(1, rows, "\n");
 	cleanup();
 	return 0;
 }
