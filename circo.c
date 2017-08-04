@@ -222,7 +222,7 @@ bufinfo(char *buf, int len, int val, int act) {
 		else
 			++x;
 	}
-	return y - 1; /* TotalLines */
+	return (act == TotalLines ? y : 0) - 1;
 }
 
 void
