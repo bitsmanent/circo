@@ -750,7 +750,7 @@ parsesrv(void) {
 		printb(sel, "! Remote host closed connection.\n");
 		return;
 	}
-	//printb(sel, "DEBUG | buf=%s\n", buf);
+	//printb(sel, "DEBUG | buf=%s", buf);
 	cmd = buf;
 	usr = host;
 	if(!cmd || !*cmd)
@@ -823,6 +823,8 @@ void
 recv_join(char *who, char *chan, char *txt) {
 	Buffer *b;
 
+	if(!*chan)
+		return;
 	if(!strcmp(who, nick)) {
 		sel = newbuf(chan);
 		b = sel;
