@@ -97,6 +97,7 @@ typedef struct {
 
 /* function declarations */
 void attach(Buffer *b);
+int bprintf(Buffer *b, char *fmt, ...);
 int bufinfo(char *buf, int len, int val, int act);
 void cleanup(void);
 void cmd_close(char *cmd, char *s);
@@ -129,7 +130,6 @@ int mvprintf(int x, int y, char *fmt, ...);
 Buffer *newbuf(char *name);
 void parsecmd(void);
 void parsesrv(void);
-int printb(Buffer *b, char *fmt, ...);
 void privmsg(char *to, char *txt);
 void recv_busynick(char *u, char *u2, char *u3);
 void recv_join(char *who, char *chan, char *txt);
@@ -199,6 +199,29 @@ attach(Buffer *b) {
 }
 
 int
+bprintf(Buffer *b, char *fmt, ...) {
+	va_list ap;
+	char buf[BUFSZ + 80]; /* 80 should be enough for the timestring... */
+	time_t tm;
+	int len = 0;
+
+	tm = time(NULL);
+        len = strftime(buf, sizeof(buf), TIMESTAMP_FORMAT, localtime(&tm));
+	va_start(ap, fmt);
+	len += vsnprintf(&buf[len], sizeof(buf) - len - 1, fmt, ap);
+	va_end(ap);
+	if(!b->size || b->len + len >= b->size)
+		if(!(b->data = realloc(b->data, b->size += len + BUFSZ)))
+			die("Cannot realloc\n");
+	memcpy(&b->data[b->len], buf, len);
+	b->len += len;
+	b->nlines = bufinfo(b->data, b->len, 0, TotalLines);
+	sel->need_redraw |= REDRAW_BUFFER;
+	logw(buf);
+	return len;
+}
+
+int
 bufinfo(char *buf, int len, int val, int act) {
 	int x, y, i;
 
@@ -242,11 +265,11 @@ cmd_close(char *cmd, char *s) {
 
 	b = *s ? getbuf(s) : sel;
 	if(!b) {
-		printb(status, "%s: unknown buffer.\n", s);
+		bprintf(status, "%s: unknown buffer.\n", s);
 		return;
 	}
 	if(b == status) {
-		printb(status, "Cannot close the status.\n");
+		bprintf(status, "Cannot close the status.\n");
 		return;
 	}
 	if(srv && (b->name[0] == '#' || b->name[0] == '&'))
@@ -264,14 +287,14 @@ cmd_msg(char *cmd, char *s) {
 	char *to, *txt;
 
 	if(!srv) {
-		printb(sel, "You're offline.\n");
+		bprintf(sel, "You're offline.\n");
 		return;
 	}
 	trim(s);
 	to = s;
 	txt = skip(to, ' ');
 	if(!(*to && *txt)) {
-		printb(sel, "Usage: /%s <channel or user> <text>\n", cmd);
+		bprintf(sel, "Usage: /%s <channel or user> <text>\n", cmd);
 		return;
 	}
 	privmsg(to, txt);
@@ -295,14 +318,14 @@ cmd_server(char *cmd, char *s) {
 	if(!*p)
 		p = port;
 	if(*skip(p, ' ')) {
-		printb(status, "Usage: /%s [host] [port]\n", cmd);
+		bprintf(status, "Usage: /%s [host] [port]\n", cmd);
 		return;
 	}
 	if(srv)
 		sout("QUIT");
 	srv = fdopen(dial(h, p), "r+");
 	if(!srv) {
-		printb(status, "Cannot connect to %s on port %s\n", h, p);
+		bprintf(status, "Cannot connect to %s on port %s\n", h, p);
 		return;
 	}
 	setbuf(srv, NULL);
@@ -316,7 +339,7 @@ cmd_topic(char *cmd, char *s) {
 	char *chan, *txt;
 
 	if(!srv) {
-		printb(sel, "You're offline.\n");
+		bprintf(sel, "You're offline.\n");
 		return;
 	}
 	if(!*s) {
@@ -334,7 +357,7 @@ cmd_topic(char *cmd, char *s) {
 	}
 	else {
 		if(sel == status) {
-			printb(sel, "Usage: /%s [channel] [text]\n", cmd);
+			bprintf(sel, "Usage: /%s [channel] [text]\n", cmd);
 			return;
 		}
 		chan = sel->name;
@@ -737,7 +760,7 @@ parsecmd(void) {
 	if(srv)
 		sout("%s %s", p, tp);
 	else
-		printb(sel, "/%s: not connected.\n", p);
+		bprintf(sel, "/%s: not connected.\n", p);
 }
 
 void
@@ -747,10 +770,10 @@ parsesrv(void) {
 
 	if(fgets(buf, sizeof buf, srv) == NULL) {
 		srv = NULL;
-		printb(sel, "! Remote host closed connection.\n");
+		bprintf(sel, "! Remote host closed connection.\n");
 		return;
 	}
-	//printb(sel, "DEBUG | buf=%s", buf);
+	//bprintf(sel, "DEBUG | buf=%s", buf);
 	cmd = buf;
 	usr = host;
 	if(!cmd || !*cmd)
@@ -767,7 +790,7 @@ parsesrv(void) {
 	txt = skip(par, ':');
 	trim(txt);
 	trim(par);
-	//printb(sel, "DEBUG | cmd=%s nick=%s par=%s usr=%s txt=%s\n", cmd, nick, par, usr, txt);
+	//bprintf(sel, "DEBUG | cmd=%s nick=%s par=%s usr=%s txt=%s\n", cmd, nick, par, usr, txt);
 	for(int i = 0; i < LENGTH(messages); ++i) {
 		if(!strcmp(messages[i].name, cmd)) {
 			if(messages[i].func)
@@ -776,30 +799,7 @@ parsesrv(void) {
 		}
 	}
 	par = skip(par, ' ');
-	printb(sel, "%s %s\n", par, txt);
-}
-
-int
-printb(Buffer *b, char *fmt, ...) {
-	va_list ap;
-	char buf[BUFSZ + 80]; /* 80 should be enough for the timestring... */
-	time_t tm;
-	int len = 0;
-
-	tm = time(NULL);
-        len = strftime(buf, sizeof(buf), TIMESTAMP_FORMAT, localtime(&tm));
-	va_start(ap, fmt);
-	len += vsnprintf(&buf[len], sizeof(buf) - len - 1, fmt, ap);
-	va_end(ap);
-	if(!b->size || b->len + len >= b->size)
-		if(!(b->data = realloc(b->data, b->size += len + BUFSZ)))
-			die("Cannot realloc\n");
-	memcpy(&b->data[b->len], buf, len);
-	b->len += len;
-	b->nlines = bufinfo(b->data, b->len, 0, TotalLines);
-	sel->need_redraw |= REDRAW_BUFFER;
-	logw(buf);
-	return len;
+	bprintf(sel, "%s %s\n", par, txt);
 }
 
 void
@@ -808,13 +808,13 @@ privmsg(char *to, char *txt) {
 	
 	if(!b)
 		b = isalpha(*to) ? newbuf(to) : sel;
-	printb(b, "%s: %s\n", nick, txt);
+	bprintf(b, "%s: %s\n", nick, txt);
 	sout("PRIVMSG %s :%s", to, txt);
 }
 
 void
 recv_busynick(char *u, char *u2, char *u3) {
-	printb(status, "%s is busy, choose a different /nick\n", nick);
+	bprintf(status, "%s is busy, choose a different /nick\n", nick);
 	*nick = '\0';
 	sel->need_redraw |= REDRAW_BAR;
 }
@@ -832,7 +832,7 @@ recv_join(char *who, char *chan, char *txt) {
 	else {
 		b = getbuf(chan);
 	}
-	printb(b, "JOIN %s\n", who);
+	bprintf(b, "JOIN %s\n", who);
 	if(b == sel)
 		sel->need_redraw |= REDRAW_ALL;
 }
@@ -847,7 +847,7 @@ recv_mode(char *u, char *val, char *u2) {
 
 void
 recv_motd(char *u, char *u2, char *txt) {
-	printb(status, "%s\n", txt);
+	bprintf(status, "%s\n", txt);
 }
 
 void
@@ -856,13 +856,13 @@ recv_nick(char *who, char *u, char *txt) {
 		strcpy(nick, txt);
 		sel->need_redraw |= REDRAW_BAR;
 	}
-	printb(sel, "NICK %s: %s\n", who, txt);
+	bprintf(sel, "NICK %s: %s\n", who, txt);
 }
 
 void
 recv_notice(char *who, char *u, char *txt) {
 	/* XXX redirect to the relative buffer, if possible */
-	printb(sel, "NOTICE: %s: %s\n", who, txt);
+	bprintf(sel, "NOTICE: %s: %s\n", who, txt);
 }
 
 void
@@ -881,7 +881,7 @@ recv_part(char *who, char *chan, char *txt) {
 		freebuf(b);
 	}
 	else {
-		printb(b, "PART %s %s\n", who, txt);
+		bprintf(b, "PART %s %s\n", who, txt);
 	}
 }
 
@@ -899,29 +899,29 @@ recv_privmsg(char *from, char *to, char *txt) {
 	b = getbuf(to);
 	if(!b)
 		b = newbuf(to);
-	printb(b, "%s: %s\n", from, txt);
+	bprintf(b, "%s: %s\n", from, txt);
 }
 
 void
 recv_quit(char *who, char *u, char *txt) {
-	printb(sel, "QUIT %s (%s)\n", who, txt);
+	bprintf(sel, "QUIT %s (%s)\n", who, txt);
 }
 
 void
 recv_topic(char *who, char *chan, char *txt) {
-	printb(getbuf(chan), "%s changed topic to %s\n", who, txt);
+	bprintf(getbuf(chan), "%s changed topic to %s\n", who, txt);
 }
 
 void
 recv_topicrpl(char *usr, char *par, char *txt) {
 	char *chan = skip(par, ' ');
-	printb(sel, "Topic on %s is %s\n", chan, txt);
+	bprintf(sel, "Topic on %s is %s\n", chan, txt);
 }
 
 void
 recv_users(char *usr, char *par, char *txt) {
 	char *chan = skip(par, '@') + 1;
-	printb(sel, "Users in %s: %s\n", chan, txt);
+	bprintf(sel, "Users in %s: %s\n", chan, txt);
 }
 
 void
@@ -1057,9 +1057,9 @@ usrin(void) {
 			else {
 				histpush(sel->cmd, sel->cmdlen);
 				if(sel == status)
-					printb(sel, "Cannot send text here.\n");
+					bprintf(sel, "Cannot send text here.\n");
 				else if(!srv)
-					printb(sel, "You're not connected.\n");
+					bprintf(sel, "You're not connected.\n");
 				else
 					privmsg(sel->name, sel->cmd);
 			}
