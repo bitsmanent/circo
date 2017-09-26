@@ -1025,7 +1025,7 @@ trim(char *s) {
 
 void
 usage(void) {
-	die("Usage: %s ...\n", argv0);
+	die("Usage: %s [-v] [-hpnl <arg>]\n", argv0);
 }
 
 void
@@ -1106,7 +1106,7 @@ main(int argc, char *argv[]) {
 		strncpy(logfile, EARGF(usage()), sizeof logfile);
 		break;
 	case 'v':
-		die("foo..");
+		die("circo-"VERSION"\n");
 	default:
 		usage();
 	} ARGEND;
