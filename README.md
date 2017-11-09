@@ -1,9 +1,9 @@
 Hello
 =====
-circo is a small IRC client for the terminal. It provides a list of views to
-differentiate between channels, users, and other messages. Each buffer has its
-own input text while other relevant informations such as server and nickname
-are always visible at the top.
+circo is a small IRC client for the terminal. It provides a list of views
+(buffers) to differentiate between channels, users, and other messages. Each
+buffer has its own input text while other relevant informations such as server
+and nickname are always visible at the top.
 
 Despite it's minimal design, circo is definitely not a suckless piece of code.
 It don't even follows in all respect the UNIX philosophy but it provides a very
@@ -21,7 +21,7 @@ one would expect from an IRC client for the console:
 - Raw IRC commands
 
 None of the CTCP specification has been (nor will be) implemented, which means
-no DCC at all. In other words: direct chat and files sending are not allowed.
+no DCC at all. In other words: direct chat and files sending are not available.
 
 Status
 ======
