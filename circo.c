@@ -1112,7 +1112,7 @@ main(int argc, char *argv[]) {
 	} ARGEND;
 
 	if(!*nick)
-		strncpy(nick, user ? user : "unknown", sizeof nick);
+		strncpy(nick, user ? user : "circo", sizeof nick);
 	printf(TTLSET, "circo");
 	setup();
 	if(*logfile)
