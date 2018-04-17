@@ -664,10 +664,8 @@ history(const Arg *arg) {
 		return;
 	for(i = nl = 0; i < sel->histsz; i += strlen(&sel->hist[i]) + 2, ++nl);
 	if(!sel->histlnoff) {
-		if(sel->cmdlen) {
+		if(sel->cmdlen)
 			histpush(sel->cmd, sel->cmdlen);
-			/* don't ++nl since the line has to be skipped */
-		}
 		sel->histlnoff = nl+1;
 	}
 	n = sel->histlnoff + arg->i;
@@ -699,10 +697,9 @@ histpush(char *buf, int len) {
 		if(!memcmp(&sel->hist[i], buf, len))
 			return;
 	}
-	if((i = sel->histsz)) {
-		++i;
-		++sel->histsz;
-	}
+	i = sel->histsz;
+	if(sel->histsz)
+		i = ++sel->histsz;
 	if(!(sel->hist = realloc(sel->hist, (sel->histsz += len + 1))))
 		die("Cannot realloc\n");
 	memcpy(&sel->hist[i], buf, len);
@@ -744,7 +741,6 @@ parsecmd(void) {
 	char *p, *tp;
 	int i, len;
 
-	/* command */
 	p = &sel->cmd[1];
 	if(!*p)
 		return;
@@ -773,7 +769,7 @@ parsesrv(void) {
 		bprintf(sel, "! Remote host closed connection.\n");
 		return;
 	}
-	//bprintf(sel, "DEBUG | buf=%s", buf);
+
 	cmd = buf;
 	usr = host;
 	if(!cmd || !*cmd)
@@ -790,7 +786,6 @@ parsesrv(void) {
 	txt = skip(par, ':');
 	trim(txt);
 	trim(par);
-	//bprintf(sel, "DEBUG | cmd=%s nick=%s par=%s usr=%s txt=%s\n", cmd, nick, par, usr, txt);
 	for(int i = 0; i < LENGTH(messages); ++i) {
 		if(!strcmp(messages[i].name, cmd)) {
 			if(messages[i].func)
@@ -824,14 +819,11 @@ recv_join(char *who, char *chan, char *txt) {
 	Buffer *b;
 
 	if(!*chan)
-		return;
-	if(!strcmp(who, nick)) {
-		sel = newbuf(chan);
-		b = sel;
-	}
-	else {
+		chan = txt;
+	if(!strcmp(who, nick))
+		b = sel = newbuf(chan);
+	else
 		b = getbuf(chan);
-	}
 	bprintf(b, "JOIN %s\n", who);
 	if(b == sel)
 		sel->need_redraw |= REDRAW_ALL;
@@ -861,7 +853,7 @@ recv_nick(char *who, char *u, char *txt) {
 
 void
 recv_notice(char *who, char *u, char *txt) {
-	/* XXX redirect to the relative buffer, if possible */
+	/* XXX redirect to the relative buffer? */
 	bprintf(sel, "NOTICE: %s: %s\n", who, txt);
 }
 
@@ -872,17 +864,16 @@ recv_part(char *who, char *chan, char *txt) {
 	/* cmd_close() destroys the buffer before PART is received */
 	if(!b)
 		return;
-	if(!strcmp(who, nick)) {
-		if(b == sel) {
-			sel = sel->next ? sel->next : buffers;
-			sel->need_redraw |= REDRAW_ALL;
-		}
-		detach(b);
-		freebuf(b);
-	}
-	else {
+	if(strcmp(who, nick)) {
 		bprintf(b, "PART %s %s\n", who, txt);
+		return;
 	}
+	if(b == sel) {
+		sel = sel->next ? sel->next : buffers;
+		sel->need_redraw |= REDRAW_ALL;
+	}
+	detach(b);
+	freebuf(b);
 }
 
 void
