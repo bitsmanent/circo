@@ -818,8 +818,11 @@ recv_join(char *who, char *chan, char *txt) {
 		chan = txt;
 	if(!strcmp(who, nick))
 		b = sel = newbuf(chan);
-	else
+	else {
 		b = getbuf(chan);
+		if(!b) /* malformed message */
+			return;
+	}
 	bprintf(b, "JOIN %s\n", who);
 	if(b == sel)
 		sel->need_redraw |= REDRAW_ALL;
