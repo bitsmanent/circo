@@ -1,5 +1,11 @@
 /* See LICENSE file for copyright and license details. */
 
+/* defaults */
+char *host = "irc.freenode.org";
+char *port = "6667";
+char nick[32] = {0}; /* 0 means getenv("USER") */
+char logfile[64] = "/tmp/circo.log";
+
 /* Timestamp format; see strftime(3). */
 #define TIMESTAMP_FORMAT "%Y-%m-%d %T | "
 

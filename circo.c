@@ -183,11 +183,6 @@ Message messages[] = {
 
 };
 
-char *host = "irc.freenode.org";
-char *port = "6667";
-char logfile[64] = "/tmp/circo.log";
-char nick[32];
-
 /* configuration, allows nested code to access above variables */
 #include "config.h"
 
