@@ -328,6 +328,7 @@ cmd_server(char *cmd, char *s) {
 		bprintf(status, "Cannot connect to %s on port %s\n", h, p);
 		return;
 	}
+	printf(TTLSET, h);
 	setbuf(srv, NULL);
 	sout("NICK %s", nick);
 	sout("USER %s localhost %s :%s", nick, h, nick);
@@ -1145,5 +1146,6 @@ main(int argc, char *argv[]) {
 	}
 	mvprintf(1, rows, "\n");
 	cleanup();
+	printf(TTLSET, "");
 	return 0;
 }
