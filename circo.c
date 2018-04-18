@@ -1071,6 +1071,7 @@ usrin(void) {
 
 int
 main(int argc, char *argv[]) {
+	Buffer *b;
 	struct timeval tv;
 	fd_set rd;
 	int n, nfds;
@@ -1131,7 +1132,7 @@ main(int argc, char *argv[]) {
 			if(fgets(bufin, sizeof bufin, srv) == NULL) {
 				srv = NULL;
 				bprintf(sel, "Remote host closed connection.\n");
-				for(Buffer *b = buffers; b; b = b->next)
+				for(b = buffers; b; b = b->next)
 					bprintf(b, "Remote host closed connection.\n");
 			}
 			else
