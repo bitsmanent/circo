@@ -160,6 +160,7 @@ Buffer *buffers, *status, *sel;
 char bufin[4096];
 char bufout[4096];
 struct termios origti;
+time_t trespond;
 int running = 1;
 int rows, cols;
 
@@ -209,7 +210,7 @@ bprintf(Buffer *b, char *fmt, ...) {
 	va_end(ap);
 	if(!b->size || b->len + len >= b->size)
 		if(!(b->data = realloc(b->data, b->size += len + BUFSZ)))
-			die("Cannot realloc\n");
+			die("realloc()\n");
 	memcpy(&b->data[b->len], buf, len);
 	b->len += len;
 	b->nlines = bufinfo(b->data, b->len, 0, TotalLines);
@@ -923,6 +924,64 @@ resize(int x, int y) {
 }
 
 void
+run(void) {
+	Buffer *b;
+	struct timeval tv;
+	fd_set rd;
+	int n, nfds;
+
+	while(running) {
+		FD_ZERO(&rd);
+		FD_SET(0, &rd);
+		tv.tv_sec = 120;
+		tv.tv_usec = 0;
+		nfds = 0;
+		if(srv) {
+			FD_SET(fileno(srv), &rd);
+			nfds = fileno(srv);
+		}
+		n = select(nfds + 1, &rd, 0, 0, &tv);
+		if(n < 0) {
+			if(errno == EINTR)
+				continue;
+			die("select()\n");
+		}
+		if(n == 0) {
+			if(srv) {
+				if(time(NULL) - trespond >= 300) {
+					fclose(srv);
+					srv = NULL;
+					for(b = buffers; b; b = b->next)
+						bprintf(b, "Connection timeout.\n");
+				}
+				else
+					sout("PING %s", host);
+			}
+		}
+		else {
+			if(srv && FD_ISSET(fileno(srv), &rd)) {
+				if(fgets(bufin, sizeof bufin, srv) == NULL) {
+					fclose(srv);
+					srv = NULL;
+					for(b = buffers; b; b = b->next)
+						bprintf(b, "Remote host closed connection.\n");
+				}
+				else {
+					trespond = time(NULL);
+					parsesrv();
+				}
+			}
+			if(FD_ISSET(0, &rd))
+				usrin();
+		}
+		if(sel->need_redraw) {
+			draw();
+			sel->need_redraw = 0;
+		}
+	}
+}
+
+void
 scroll(const Arg *arg) {
 	int bufh = rows - 2;
 
@@ -1071,10 +1130,6 @@ usrin(void) {
 
 int
 main(int argc, char *argv[]) {
-	Buffer *b;
-	struct timeval tv;
-	fd_set rd;
-	int n, nfds;
 	const char *user = getenv("USER");
 
 	ARGBEGIN {
@@ -1107,43 +1162,7 @@ main(int argc, char *argv[]) {
 	sel->need_redraw = REDRAW_ALL;
 	printf(CLEAR);
 	draw();
-	while(running) {
-		FD_ZERO(&rd);
-		FD_SET(0, &rd);
-		tv.tv_sec = 120;
-		tv.tv_usec = 0;
-		nfds = 0;
-		if(srv) {
-			FD_SET(fileno(srv), &rd);
-			nfds = fileno(srv);
-		}
-		n = select(nfds + 1, &rd, 0, 0, &tv);
-		if(n < 0) {
-			if(errno == EINTR)
-				continue;
-			die("select()\n");
-		}
-		else if(n == 0) {
-			if(srv)
-				sout("PING %s", host);
-			continue;
-		}
-		if(srv && FD_ISSET(fileno(srv), &rd)) {
-			if(fgets(bufin, sizeof bufin, srv) == NULL) {
-				srv = NULL;
-				for(b = buffers; b; b = b->next)
-					bprintf(b, "Remote host closed connection.\n");
-			}
-			else
-				parsesrv();
-		}
-		if(FD_ISSET(0, &rd))
-			usrin();
-		if(sel->need_redraw) {
-			draw();
-			sel->need_redraw = 0;
-		}
-	}
+	run();
 	mvprintf(1, rows, "\n");
 	cleanup();
 	printf(TTLSET, "");
