@@ -73,7 +73,6 @@ struct Buffer {
 	int cmdoff;
 	int cmdcur;
 	int histsz;
-	int histlen;
 	int histlnoff;
 	int need_redraw;
 	Buffer *next;
