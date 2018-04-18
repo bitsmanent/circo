@@ -1131,7 +1131,6 @@ main(int argc, char *argv[]) {
 		if(srv && FD_ISSET(fileno(srv), &rd)) {
 			if(fgets(bufin, sizeof bufin, srv) == NULL) {
 				srv = NULL;
-				bprintf(sel, "Remote host closed connection.\n");
 				for(b = buffers; b; b = b->next)
 					bprintf(b, "Remote host closed connection.\n");
 			}
