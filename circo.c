@@ -157,6 +157,8 @@ void usrin(void);
 /* variables */
 FILE *srv, *logp;
 Buffer *buffers, *status, *sel;
+char bufin[4096];
+char bufout[4096];
 struct termios origti;
 int running = 1;
 int rows, cols;
@@ -758,15 +760,8 @@ parsecmd(void) {
 void
 parsesrv(void) {
 	char *cmd, *usr, *par, *txt;
-	char buf[BUFSZ];
 
-	if(fgets(buf, sizeof buf, srv) == NULL) {
-		srv = NULL;
-		bprintf(sel, "! Remote host closed connection.\n");
-		return;
-	}
-
-	cmd = buf;
+	cmd = bufin;
 	usr = host;
 	if(!cmd || !*cmd)
 		return;
@@ -995,12 +990,11 @@ skip(char *s, char c) {
 void
 sout(char *fmt, ...) {
 	va_list ap;
-	char buf[BUFSZ];
 
 	va_start(ap, fmt);
-	vsnprintf(buf, sizeof buf, fmt, ap);
+	vsnprintf(bufout, sizeof bufout, fmt, ap);
 	va_end(ap);
-	fprintf(srv, "%s\r\n", buf);
+	fprintf(srv, "%s\r\n", bufout);
 }
 
 void
@@ -1133,8 +1127,16 @@ main(int argc, char *argv[]) {
 				sout("PING %s", host);
 			continue;
 		}
-		if(srv && FD_ISSET(fileno(srv), &rd))
-			parsesrv();
+		if(srv && FD_ISSET(fileno(srv), &rd)) {
+			if(fgets(bufin, sizeof bufin, srv) == NULL) {
+				srv = NULL;
+				bprintf(sel, "Remote host closed connection.\n");
+				for(Buffer *b = buffers; b; b = b->next)
+					bprintf(b, "Remote host closed connection.\n");
+			}
+			else
+				parsesrv();
+		}
 		if(FD_ISSET(0, &rd))
 			usrin();
 		if(sel->need_redraw) {
