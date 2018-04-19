@@ -593,6 +593,7 @@ void
 focusprev(const Arg *arg) {
 	Buffer *b, *nb;
 
+	nb = sel;
 	if(sel == buffers) {
 		for(b = buffers; b; b = b->next)
 			nb = b;
@@ -811,10 +812,11 @@ recv_join(char *who, char *chan, char *txt) {
 
 	if(!*chan)
 		chan = txt;
-	if(!strcmp(who, nick))
-		b = sel = newbuf(chan);
-	else {
-		b = getbuf(chan);
+	b = getbuf(chan);
+	if(!b) {
+		if(strcmp(who, nick)) /* this should never happen here */
+			return;
+		b = newbuf(chan);
 		if(!b) /* malformed message */
 			return;
 	}
