@@ -178,6 +178,7 @@ Message messages[] = {
 	{ "332",     recv_topicrpl },
 	{ "353",     recv_users },
 	{ "372",     recv_motd },
+	{ "433",     recv_busynick },
 	{ "437",     recv_busynick },
 
 	/* ignored */
@@ -569,7 +570,7 @@ drawcmdln(void) {
 	cmdsz = pslen < cols ? cols - pslen : 0;
 	if(cmdsz) {
 		cur = pslen + (sel->cmdoff % cmdsz) + 1;
-		i = cmdsz ? cmdsz * (sel->cmdoff / cmdsz) : 0;
+		i = cmdsz * (sel->cmdoff / cmdsz);
 	}
 	else {
 		cur = cols;
