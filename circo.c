@@ -819,6 +819,7 @@ recv_join(char *who, char *chan, char *txt) {
 		b = newbuf(chan);
 		if(!b) /* malformed message */
 			return;
+		sel = b;
 	}
 	bprintf(b, "JOIN %s\n", who);
 	if(b == sel)
