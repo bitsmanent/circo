@@ -20,6 +20,7 @@ Command commands[] = {
 	{ "quit",      cmd_quit },
 	{ "server",    cmd_server },
 	{ "topic",     cmd_topic },
+	{ "rejoinall", cmd_rejoinall },
 };
 
 /* key definitions */

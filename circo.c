@@ -102,6 +102,7 @@ void cleanup(void);
 void cmd_close(char *cmd, char *s);
 void cmd_msg(char *cmd, char *s);
 void cmd_quit(char *cmd, char *s);
+void cmd_rejoinall(char *cmd, char *s);
 void cmd_server(char *cmd, char *s);
 void cmd_topic(char *cmd, char *s);
 void cmdln_chldel(const Arg *arg);
@@ -302,6 +303,15 @@ cmd_quit(char *cmd, char *s) {
 	if(srv)
 		sout("QUIT :%s", s ? s : QUIT_MESSAGE);
 	running = 0;
+}
+
+void
+cmd_rejoinall(char *cmd, char *s) {
+	Buffer *b;
+
+	for(b = buffers; b; b = b->next)
+		if(b->name[0] == '#' || b->name[0] == '&')
+			sout("JOIN %s",b->name);
 }
 
 void
