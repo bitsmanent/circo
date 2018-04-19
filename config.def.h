@@ -7,7 +7,7 @@ char nick[32] = {0}; /* 0 means getenv("USER") */
 char logfile[64] = "/tmp/circo.log";
 
 /* Timestamp format; see strftime(3). */
-#define TIMESTAMP_FORMAT "%Y-%m-%d %T | "
+#define TIMESTAMP_FORMAT "%d/%m %T | "
 
 /* Used if no message is specified */
 #define QUIT_MESSAGE "circo"
