@@ -312,7 +312,7 @@ cmd_rejoinall(char *cmd, char *s) {
 
 	for(b = buffers; b; b = b->next)
 		if(b->name[0] == '#' || b->name[0] == '&')
-			sout("JOIN %s",b->name);
+			sout("JOIN %s", b->name);
 }
 
 void
@@ -354,6 +354,8 @@ cmd_topic(char *cmd, char *s) {
 	if(!*s) {
 		if(sel->name[0] == '#' || sel->name[0] == '&')
 			sout("TOPIC %s", sel->name);
+		else
+			bprintf(sel, "This is not a channel.\n");
 		return;
 	}
 	if(*s == '#' || *s == '&') {
