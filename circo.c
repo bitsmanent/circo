@@ -516,7 +516,7 @@ drawbar(void) {
 	if(!(cols && rows))
 		return;
 	len = snprintf(buf, sizeof buf, "%s@%s:%s - %s%s",
-		srv ? nick : "", srv ? host : "", srv ? port : "",
+		nick, srv ? host : "", srv ? port : "",
 		sel->name, sel->line ? " [scrolled]" : "");
 	mvprintf(1, 1, "%s%s", buf, len < cols ? CLEARRIGHT : "");
 }
@@ -560,11 +560,12 @@ drawbuf(void) {
 void
 drawcmdln(void) {
 	char buf[cols+1];
+	char prompt[64];
 	int pslen, cmdsz, cur, i, len;
 
 	if(!(cols && rows))
 		return;
-	pslen = 3 + strlen(sel->name); /* "[%s] " */
+	pslen = snprintf(prompt, sizeof prompt, "[%s] ", sel->name);
 	cmdsz = pslen < cols ? cols - pslen : 0;
 	if(cmdsz) {
 		cur = pslen + (sel->cmdoff % cmdsz) + 1;
@@ -575,7 +576,7 @@ drawcmdln(void) {
 		i = 0;
 	}
 	sel->cmdcur = cur;
-	len = snprintf(buf, sizeof buf, "[%s] %s", sel->name, &sel->cmd[i]);
+	len = snprintf(buf, sizeof buf, "%s%s", prompt, &sel->cmd[i]);
 	mvprintf(1, rows, "%s%s", buf, len < cols ? CLEARRIGHT : "");
 }
 
