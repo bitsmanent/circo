@@ -22,6 +22,8 @@ char *argv0;
 
 /* macros */
 #define LENGTH(X)       (sizeof X / sizeof X[0])
+#define ISCHANPFX(P)    ((P) == '#' || (P) == '&')
+#define ISCHAN(B)       ISCHANPFX((B)->name[0])
 #define BUFSZ           512
 
 /* drawing flags */
@@ -271,7 +273,7 @@ cmd_close(char *cmd, char *s) {
 		bprintf(status, "Cannot close the status.\n");
 		return;
 	}
-	if(srv && (b->name[0] == '#' || b->name[0] == '&'))
+	if(srv && ISCHAN(b))
 		sout("PART :%s", b->name);
 	if(b == sel) {
 		sel = sel->next ? sel->next : buffers;
@@ -311,7 +313,7 @@ cmd_rejoinall(char *cmd, char *s) {
 	Buffer *b;
 
 	for(b = buffers; b; b = b->next)
-		if(b->name[0] == '#' || b->name[0] == '&')
+		if(ISCHAN(b))
 			sout("JOIN %s", b->name);
 }
 
@@ -352,13 +354,13 @@ cmd_topic(char *cmd, char *s) {
 		return;
 	}
 	if(!*s) {
-		if(sel->name[0] == '#' || sel->name[0] == '&')
+		if(ISCHAN(sel))
 			sout("TOPIC %s", sel->name);
 		else
 			bprintf(sel, "This is not a channel.\n");
 		return;
 	}
-	if(*s == '#' || *s == '&') {
+	if(ISCHANPFX(*s)) {
 		chan = s;
 		txt = skip(s, ' ');
 		if(!*txt) {
