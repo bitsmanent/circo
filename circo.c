@@ -334,7 +334,7 @@ cmd_server(char *cmd, char *s) {
 	else
 		strncpy(host, t, sizeof host);
 	if(srv) {
-		sout("QUIT");
+		sout("QUIT :%s", s ? s : QUIT_MESSAGE);
 		hangsup();
 	}
 	if(!*host)
