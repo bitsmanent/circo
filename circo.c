@@ -269,11 +269,11 @@ cmd_close(char *cmd, char *s) {
 
 	b = *s ? getbuf(s) : sel;
 	if(!b) {
-		bprintf(status, "%s: unknown buffer.\n", s);
+		bprintf(status, "/%s: %s: unknown buffer.\n", cmd, s);
 		return;
 	}
 	if(b == status) {
-		bprintf(status, "Cannot close the status.\n");
+		bprintf(status, "/%s: cannot close the status.\n", cmd);
 		return;
 	}
 	if(srv && ISCHAN(b))
@@ -296,7 +296,7 @@ cmd_msg(char *cmd, char *s) {
 	char *to, *txt;
 
 	if(!srv) {
-		bprintf(sel, "You're offline.\n");
+		bprintf(sel, "/%s: not connected.\n", cmd);
 		return;
 	}
 	trim(s);
@@ -349,11 +349,11 @@ cmd_server(char *cmd, char *s) {
 	if(srv)
 		quit(NULL);
 	if(!*host)
-		bprintf(status, "No host specified.\n");
+		bprintf(status, "/%s: no host specified.\n", cmd);
 	else if(!*port)
-		bprintf(status, "No port specified.\n");
+		bprintf(status, "/%s: no port specified.\n", cmd);
 	else if((fd = dial(host, port)) < 0)
-		bprintf(status, "Cannot connect to %s on port %s\n", host, port);
+		bprintf(status, "Cannot connect to %s on port %s.\n", host, port);
 	else {
 		srv = fdopen(fd, "r+");
 		printf(TTLSET, host);
@@ -369,14 +369,14 @@ cmd_topic(char *cmd, char *s) {
 	char *chan, *txt;
 
 	if(!srv) {
-		bprintf(sel, "You're offline.\n");
+		bprintf(sel, "/%s: not connected.\n", cmd);
 		return;
 	}
 	if(!*s) {
 		if(ISCHAN(sel))
 			sout("TOPIC %s", sel->name);
 		else
-			bprintf(sel, "This is not a channel.\n");
+			bprintf(sel, "/%s: %s in not a channel.\n", cmd, sel->name);
 		return;
 	}
 	if(ISCHANPFX(*s)) {
@@ -1152,7 +1152,7 @@ usrin(void) {
 				if(sel == status)
 					bprintf(sel, "Cannot send text here.\n");
 				else if(!srv)
-					bprintf(sel, "You're not connected.\n");
+					bprintf(sel, "Not connected.\n");
 				else
 					privmsg(sel->name, sel->cmd);
 			}
