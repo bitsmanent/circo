@@ -102,6 +102,7 @@ int bprintf(Buffer *b, char *fmt, ...);
 int bufinfo(char *buf, int len, int val, int act);
 void cleanup(void);
 void cmd_close(char *cmd, char *s);
+void cmd_exit(char *cmd, char *s);
 void cmd_msg(char *cmd, char *s);
 void cmd_quit(char *cmd, char *s);
 void cmd_rejoinall(char *cmd, char *s);
@@ -134,7 +135,7 @@ Buffer *newbuf(char *name);
 void parsecmd(void);
 void parsesrv(void);
 void privmsg(char *to, char *txt);
-void quit(void);
+void quit(char *msg);
 void recv_busynick(char *u, char *u2, char *u3);
 void recv_join(char *who, char *chan, char *txt);
 void recv_mode(char *u, char *val, char *u2);
@@ -286,6 +287,11 @@ cmd_close(char *cmd, char *s) {
 }
 
 void
+cmd_exit(char *cmd, char *s) {
+	running = 0;
+}
+
+void
 cmd_msg(char *cmd, char *s) {
 	char *to, *txt;
 
@@ -305,8 +311,11 @@ cmd_msg(char *cmd, char *s) {
 
 void
 cmd_quit(char *cmd, char *s) {
-	quit();
-	running = 0;
+	Buffer *b;
+
+	quit(s);
+	for(b = buffers; b; b = b->next)
+		bprintf(b, "Quit.\n");
 }
 
 void
@@ -334,7 +343,7 @@ cmd_server(char *cmd, char *s) {
 	else
 		strncpy(host, t, sizeof host);
 	if(srv)
-		quit();
+		quit(NULL);
 	if(!*host)
 		bprintf(status, "No host specified.\n");
 	else if(!*port)
@@ -830,9 +839,9 @@ privmsg(char *to, char *txt) {
 }
 
 void
-quit(void) {
+quit(char *msg) {
 	if(srv)
-		sout("QUIT :%s", s ? s : QUIT_MESSAGE);
+		sout("QUIT :%s", msg ? msg : QUIT_MESSAGE);
 	hangsup();
 }
 
