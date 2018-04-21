@@ -313,6 +313,10 @@ void
 cmd_quit(char *cmd, char *s) {
 	Buffer *b;
 
+	if(!srv) {
+		bprintf(sel, "/%s: not connected.\n", cmd);
+		return;
+	}
 	quit(s);
 	for(b = buffers; b; b = b->next)
 		bprintf(b, "Quit.\n");
