@@ -320,6 +320,7 @@ cmd_rejoinall(char *cmd, char *s) {
 void
 cmd_server(char *cmd, char *s) {
 	char *h, *p;
+	int fd;
 
 	p = skip(s, ' ');
 	h = s;
@@ -333,11 +334,11 @@ cmd_server(char *cmd, char *s) {
 	}
 	if(srv)
 		sout("QUIT");
-	srv = fdopen(dial(h, p), "r+");
-	if(!srv) {
+	if((fd = dial(h, p)) < 0) {
 		bprintf(status, "Cannot connect to %s on port %s\n", h, p);
 		return;
 	}
+	srv = fdopen(dial(h, p), "r+");
 	printf(TTLSET, h);
 	setbuf(srv, NULL);
 	sout("NICK %s", nick);
