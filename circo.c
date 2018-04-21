@@ -320,31 +320,33 @@ cmd_rejoinall(char *cmd, char *s) {
 
 void
 cmd_server(char *cmd, char *s) {
-	char *h, *p;
+	char *t;
 	int fd;
 
-	hangsup();
-	p = skip(s, ' ');
-	h = s;
-	if(!*h)
-		h = host;
-	if(!*p)
-		p = port;
-	if(*skip(p, ' ')) {
-		bprintf(status, "Usage: /%s [host] [port]\n", cmd);
-		return;
-	}
-	if(srv)
+	t = skip(s, ' ');
+	if(!*t)
+		t = port;
+	else
+		strncpy(port, t, sizeof port);
+	t = s;
+	if(!*t)
+		t = host;
+	else
+		strncpy(host, t, sizeof host);
+	if(srv) {
 		sout("QUIT");
-	if((fd = dial(h, p)) < 0) {
-		bprintf(status, "Cannot connect to %s on port %s\n", h, p);
-		return;
+		hangsup();
 	}
-	srv = fdopen(dial(h, p), "r+");
-	printf(TTLSET, h);
-	setbuf(srv, NULL);
-	sout("NICK %s", nick);
-	sout("USER %s localhost %s :%s", nick, h, nick);
+	if((fd = dial(host, port)) < 0) {
+		bprintf(status, "Cannot connect to %s on port %s\n", host, port);
+	}
+	else {
+		srv = fdopen(fd, "r+");
+		printf(TTLSET, host);
+		setbuf(srv, NULL);
+		sout("NICK %s", nick);
+		sout("USER %s localhost %s :%s", nick, host, nick);
+	}
 	sel->need_redraw |= REDRAW_BAR;
 }
 
@@ -1160,22 +1162,12 @@ main(int argc, char *argv[]) {
 	const char *user = getenv("USER");
 
 	ARGBEGIN {
-	case 'h':
-		host = EARGF(usage());
-		break;
-	case 'p':
-		port = EARGF(usage());
-		break;
-	case 'n':
-		strncpy(nick, EARGF(usage()), sizeof nick);
-		break;
-	case 'l':
-		strncpy(logfile, EARGF(usage()), sizeof logfile);
-		break;
-	case 'v':
-		die("circo-"VERSION"\n");
-	default:
-		usage();
+	case 'h': strncpy(host, EARGF(usage()), sizeof host); break;
+	case 'p': strncpy(port, EARGF(usage()), sizeof port); break;
+	case 'n': strncpy(nick, EARGF(usage()), sizeof nick); break;
+	case 'l': strncpy(logfile, EARGF(usage()), sizeof logfile); break;
+	case 'v': die("circo-"VERSION"\n");
+	default: usage();
 	} ARGEND;
 
 	if(!*nick)
