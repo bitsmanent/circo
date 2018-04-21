@@ -337,9 +337,12 @@ cmd_server(char *cmd, char *s) {
 		sout("QUIT");
 		hangsup();
 	}
-	if((fd = dial(host, port)) < 0) {
+	if(!*host)
+		bprintf(status, "No host specified.\n");
+	else if(!*port)
+		bprintf(status, "No port specified.\n");
+	else if((fd = dial(host, port)) < 0)
 		bprintf(status, "Cannot connect to %s on port %s\n", host, port);
-	}
 	else {
 		srv = fdopen(fd, "r+");
 		printf(TTLSET, host);
