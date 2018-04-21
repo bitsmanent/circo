@@ -125,6 +125,7 @@ void focusnext(const Arg *arg);
 void focusprev(const Arg *arg);
 void freebuf(Buffer *b);
 int getkey(void);
+void hangsup(void);
 void history(const Arg *arg);
 void histpush(char *buf, int len);
 void logw(char *txt);
@@ -322,6 +323,7 @@ cmd_server(char *cmd, char *s) {
 	char *h, *p;
 	int fd;
 
+	hangsup();
 	p = skip(s, ' ');
 	h = s;
 	if(!*h)
@@ -673,6 +675,14 @@ getkey(void) {
 }
 
 void
+hangsup(void) {
+	if(!srv)
+		return;
+	fclose(srv);
+	srv = NULL;
+}
+
+void
 history(const Arg *arg) {
 	int nl, n, i;
 
@@ -968,8 +978,7 @@ run(void) {
 		if(n == 0) {
 			if(srv) {
 				if(time(NULL) - trespond >= 300) {
-					fclose(srv);
-					srv = NULL;
+					hangsup();
 					for(b = buffers; b; b = b->next)
 						bprintf(b, "Connection timeout.\n");
 				}
@@ -980,8 +989,7 @@ run(void) {
 		else {
 			if(srv && FD_ISSET(fileno(srv), &rd)) {
 				if(fgets(bufin, sizeof bufin, srv) == NULL) {
-					fclose(srv);
-					srv = NULL;
+					hangsup();
 					for(b = buffers; b; b = b->next)
 						bprintf(b, "Remote host closed connection.\n");
 				}
