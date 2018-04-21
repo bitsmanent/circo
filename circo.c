@@ -134,6 +134,7 @@ Buffer *newbuf(char *name);
 void parsecmd(void);
 void parsesrv(void);
 void privmsg(char *to, char *txt);
+void quit(void);
 void recv_busynick(char *u, char *u2, char *u3);
 void recv_join(char *who, char *chan, char *txt);
 void recv_mode(char *u, char *val, char *u2);
@@ -304,8 +305,7 @@ cmd_msg(char *cmd, char *s) {
 
 void
 cmd_quit(char *cmd, char *s) {
-	if(srv)
-		sout("QUIT :%s", s ? s : QUIT_MESSAGE);
+	quit();
 	running = 0;
 }
 
@@ -333,10 +333,8 @@ cmd_server(char *cmd, char *s) {
 		t = host;
 	else
 		strncpy(host, t, sizeof host);
-	if(srv) {
-		sout("QUIT :%s", s ? s : QUIT_MESSAGE);
-		hangsup();
-	}
+	if(srv)
+		quit();
 	if(!*host)
 		bprintf(status, "No host specified.\n");
 	else if(!*port)
@@ -829,6 +827,13 @@ privmsg(char *to, char *txt) {
 		b = isalpha(*to) ? newbuf(to) : sel;
 	bprintf(b, "%s: %s\n", nick, txt);
 	sout("PRIVMSG %s :%s", to, txt);
+}
+
+void
+quit(void) {
+	if(srv)
+		sout("QUIT :%s", s ? s : QUIT_MESSAGE);
+	hangsup();
 }
 
 void
