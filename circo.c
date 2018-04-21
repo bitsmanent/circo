@@ -350,19 +350,24 @@ cmd_server(char *cmd, char *s) {
 		strncpy(host, t, sizeof host);
 	if(srv)
 		quit(NULL);
-	if(!*host)
+	if(!*host) {
 		bprintf(status, "/%s: no host specified.\n", cmd);
-	else if(!*port)
-		bprintf(status, "/%s: no port specified.\n", cmd);
-	else if((fd = dial(host, port)) < 0)
-		bprintf(status, "Cannot connect to %s on port %s.\n", host, port);
-	else {
-		srv = fdopen(fd, "r+");
-		printf(TTLSET, host);
-		setbuf(srv, NULL);
-		sout("NICK %s", nick);
-		sout("USER %s localhost %s :%s", nick, host, nick);
+		return;
 	}
+	if(!*port) {
+		bprintf(status, "/%s: no port specified.\n", cmd);
+		return;
+	}
+	bprintf(status, "Connecting to %s:%s...\n", host, port);
+	if((fd = dial(host, port)) < 0) { /* Note: dial() locks. */
+		bprintf(status, "Cannot connect to %s on port %s.\n", host, port);
+		return;
+	}
+	printf(TTLSET, host);
+	srv = fdopen(fd, "r+");
+	setbuf(srv, NULL);
+	sout("NICK %s", nick);
+	sout("USER %s localhost %s :%s", nick, host, nick);
 	sel->need_redraw |= REDRAW_BAR;
 }
 
@@ -1087,7 +1092,6 @@ setup(void) {
 	ti.c_cc[VMIN] = 0;
 	ti.c_cc[VTIME] = 0;
 	tcsetattr(0, TCSAFLUSH, &ti);
-
 	ioctl(0, TIOCGWINSZ, &ws);
 	resize(ws.ws_row, ws.ws_col);
 }
