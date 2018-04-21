@@ -138,6 +138,7 @@ void privmsg(char *to, char *txt);
 void quit(char *msg);
 void recv_busynick(char *u, char *u2, char *u3);
 void recv_join(char *who, char *chan, char *txt);
+void recv_kick(char *who, char *chan, char *txt);
 void recv_mode(char *u, char *val, char *u2);
 void recv_motd(char *u, char *u2, char *txt);
 void recv_nick(char *who, char *u, char *txt);
@@ -171,6 +172,7 @@ int rows, cols;
 
 Message messages[] = {
 	{ "JOIN",    recv_join },
+	{ "KICK",    recv_kick },
 	{ "MODE",    recv_mode },
 	{ "NICK",    recv_nick },
 	{ "NOTICE",  recv_notice },
@@ -277,7 +279,7 @@ cmd_close(char *cmd, char *s) {
 		return;
 	}
 	if(srv && ISCHAN(b))
-		sout("PART :%s", b->name);
+		sout("PART :%s", b->name); /* Note: you may be not in that channel */
 	if(b == sel) {
 		sel = sel->next ? sel->next : buffers;
 		sel->need_redraw |= REDRAW_ALL;
@@ -874,6 +876,20 @@ recv_join(char *who, char *chan, char *txt) {
 	bprintf(b, "JOIN %s\n", who);
 	if(b == sel)
 		sel->need_redraw |= REDRAW_ALL;
+}
+
+void
+recv_kick(char *who, char *chan, char *txt) {
+	Buffer *b;
+
+	txt = skip(chan, ' ');
+	b = getbuf(chan);
+	if(!b)
+		return;
+	if(strcmp(txt, nick))
+		bprintf(b, "KICK %s %s\n", who, txt);
+	else
+		bprintf(b, "Kicked.\n");
 }
 
 void
