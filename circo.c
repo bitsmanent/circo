@@ -136,6 +136,7 @@ void parsecmd(void);
 void parsesrv(void);
 void privmsg(char *to, char *txt);
 void quit(char *msg);
+int readchar(void);
 void recv_busynick(char *u, char *u2, char *u3);
 void recv_join(char *who, char *chan, char *txt);
 void recv_kick(char *who, char *chan, char *txt);
@@ -671,15 +672,15 @@ getbuf(char *name) {
 /* XXX quick'n dirty implementation */
 int
 getkey(void) {
-	int key = getchar(), c;
+	int key = readchar(), c;
 
-	if(key != '\x1b' || getchar() != '[') {
+	if(key != '\x1b' || readchar() != '[') {
 		switch(key) {
 		case 127: key = KeyBackspace; break;
 		}
 		return key;
 	}
-	switch((c = getchar())) {
+	switch((c = readchar())) {
 	case 'A': key = KeyUp; break;
 	case 'B': key = KeyDown; break;
 	case 'C': key = KeyRight; break;
@@ -854,6 +855,12 @@ quit(char *msg) {
 	if(srv)
 		sout("QUIT :%s", msg ? msg : QUIT_MESSAGE);
 	hangsup();
+}
+
+int
+readchar(void) {
+	char buf[1] = {0};
+	return (read(0, buf, 1) < 1 ? EOF : buf[0]);
 }
 
 void
