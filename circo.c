@@ -291,6 +291,7 @@ cmd_close(char *cmd, char *s) {
 
 void
 cmd_exit(char *cmd, char *s) {
+	hangsup();
 	running = 0;
 }
 
@@ -329,6 +330,10 @@ void
 cmd_rejoinall(char *cmd, char *s) {
 	Buffer *b;
 
+	if(!srv) {
+		bprintf(sel, "/%s: not connected.\n", cmd);
+		return;
+	}
 	for(b = buffers; b; b = b->next)
 		if(ISCHAN(b))
 			sout("JOIN %s", b->name);
