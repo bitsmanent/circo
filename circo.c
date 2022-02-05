@@ -36,7 +36,6 @@ char *argv0;
 #define LENGTH(X)       (sizeof X / sizeof X[0])
 #define ISCHANPFX(P)    ((P) == '#' || (P) == '&')
 #define ISCHAN(B)       ISCHANPFX((B)->name[0])
-#define BUFSZ           512
 
 /* drawing flags */
 #define REDRAW_BAR      1<<1
@@ -82,19 +81,13 @@ typedef union {
 typedef struct Buffer Buffer;
 struct Buffer {
 	char *data;
-	char name[256];
-	char cmd[BUFSZ];
+	char name[128];
 	char *hist;
-	int size;
-	int len;
-	int line;
-	int nlines;
-	int lnoff;
-	int cmdlen;
-	int cmdoff;
-	int cmdcur;
-	int histsz;
-	int histlnoff;
+	char cmdbuf[256];
+	int size, len;
+	int line, nlines, lnoff;
+	int cmdlen, cmdoff, cmdpos;
+	int histsz, histlnoff;
 	int need_redraw;
 	Buffer *next;
 };
@@ -228,7 +221,7 @@ attach(Buffer *b) {
 int
 bprintf(Buffer *b, char *fmt, ...) {
 	va_list ap;
-	char buf[BUFSZ + 80]; /* 80 should be enough for the timestring... */
+	char buf[256 + 80]; /* 80 should be enough for the timestring... */
 	time_t tm;
 	int len = 0;
 
@@ -239,7 +232,7 @@ bprintf(Buffer *b, char *fmt, ...) {
 	len += strlen(&buf[len]);
 	va_end(ap);
 	if(!b->size || b->len + len >= b->size)
-		if(!(b->data = realloc(b->data, b->size += len + BUFSZ)))
+		if(!(b->data = realloc(b->data, b->size += len + 256)))
 			die("realloc()\n");
 	memcpy(&b->data[b->len], buf, len);
 	b->len += len;
@@ -445,9 +438,9 @@ cmdln_chldel(const Arg *arg) {
 	if(!sel->cmdoff)
 		return;
 	if(sel->cmdoff < sel->cmdlen)
-		memmove(&sel->cmd[sel->cmdoff - 1], &sel->cmd[sel->cmdoff],
+		memmove(&sel->cmdbuf[sel->cmdoff - 1], &sel->cmdbuf[sel->cmdoff],
 			sel->cmdlen - sel->cmdoff);
-	sel->cmd[--sel->cmdlen] = '\0';
+	sel->cmdbuf[--sel->cmdlen] = '\0';
 	--sel->cmdoff;
 	sel->need_redraw |= REDRAW_CMDLN;
 }
@@ -461,9 +454,9 @@ cmdln_chrdel(const Arg *arg) {
 		sel->need_redraw |= REDRAW_CMDLN;
 		return;
 	}
-	memmove(&sel->cmd[sel->cmdoff], &sel->cmd[sel->cmdoff + 1],
+	memmove(&sel->cmdbuf[sel->cmdoff], &sel->cmdbuf[sel->cmdoff + 1],
 		sel->cmdlen - sel->cmdoff - 1);
-	sel->cmd[--sel->cmdlen] = '\0';
+	sel->cmdbuf[--sel->cmdlen] = '\0';
 	if(sel->cmdoff && sel->cmdoff == sel->cmdlen)
 		--sel->cmdoff;
 	sel->need_redraw |= REDRAW_CMDLN;
@@ -473,9 +466,10 @@ void
 cmdln_clear(const Arg *arg) {
 	if(!sel->cmdoff)
 		return;
-	memmove(sel->cmd, &sel->cmd[sel->cmdoff], sel->cmdlen - sel->cmdoff);
+	/* preserve text on the right */
+	memmove(sel->cmdbuf, &sel->cmdbuf[sel->cmdoff], sel->cmdlen - sel->cmdoff);
 	sel->cmdlen -= sel->cmdoff;
-	sel->cmd[sel->cmdlen] = '\0';
+	sel->cmdbuf[sel->cmdlen] = '\0';
 	sel->cmdoff = 0;
 	sel->need_redraw |= REDRAW_CMDLN;
 }
@@ -492,7 +486,7 @@ cmdln_cursor(const Arg *arg) {
 		}
 		else if(sel->cmdoff > sel->cmdlen - 1) {
 			sel->cmdoff = sel->cmdlen - 1;
-			if(sel->cmdlen < sizeof sel->cmd - 1)
+			if(sel->cmdlen < sizeof sel->cmdbuf - 1)
 				++sel->cmdoff;
 		}
 	}
@@ -506,16 +500,16 @@ cmdln_wdel(const Arg *arg) {
 	if(!sel->cmdoff)
 		return;
 	i = sel->cmdoff - 1;
-	while(i && sel->cmd[i] == ' ')
+	while(i && sel->cmdbuf[i] == ' ')
 		--i;
-	if(i && isalnum(sel->cmd[i])) {
-		while(--i && isalnum(sel->cmd[i]));
+	if(i && isalnum(sel->cmdbuf[i])) {
+		while(--i && isalnum(sel->cmdbuf[i]));
 		if(i)
 			++i;
 	}
-	memmove(&sel->cmd[i], &sel->cmd[sel->cmdoff], sel->cmdlen - sel->cmdoff);
+	memmove(&sel->cmdbuf[i], &sel->cmdbuf[sel->cmdoff], sel->cmdlen - sel->cmdoff);
 	sel->cmdlen -= sel->cmdoff - i;
-	sel->cmd[sel->cmdlen] = '\0';
+	sel->cmdbuf[sel->cmdlen] = '\0';
 	sel->cmdoff = i;
 	sel->need_redraw |= REDRAW_CMDLN;
 }
@@ -571,7 +565,7 @@ draw(void) {
 		drawbuf();
 	if(sel->need_redraw & REDRAW_CMDLN)
 		drawcmdln();
-	printf(CURPOS CURSON, rows, sel->cmdcur);
+	printf(CURPOS CURSON, rows, sel->cmdpos);
 }
 
 void
@@ -646,14 +640,14 @@ drawcmdln(void) {
 	pslen = snprintf(prompt, sizeof prompt, "[%s] ", sel->name);
 	cmdsz = pslen < cols ? cols - pslen : 0;
 	if(cmdsz) {
-		sel->cmdcur = pslen + (sel->cmdoff % cmdsz) + 1;
+		sel->cmdpos = pslen + (sel->cmdoff % cmdsz) + 1;
 		i = cmdsz * (sel->cmdoff / cmdsz);
 	}
 	else {
-		sel->cmdcur = cols;
+		sel->cmdpos = cols;
 		i = 0;
 	}
-	len = snprintf(buf, sizeof buf, "%s%s", prompt, &sel->cmd[i]);
+	len = snprintf(buf, sizeof buf, "%s%s", prompt, &sel->cmdbuf[i]);
 	mvprintf(1, rows, "%s%s", buf, len < cols ? CLEARRIGHT : "");
 }
 
@@ -760,7 +754,7 @@ history(const Arg *arg) {
 	for(i = nl = 0; i < sel->histsz; i += strlen(&sel->hist[i]) + 2, ++nl);
 	if(!sel->histlnoff) {
 		if(sel->cmdlen)
-			histpush(sel->cmd, sel->cmdlen);
+			histpush(sel->cmdbuf, sel->cmdlen);
 		sel->histlnoff = nl+1;
 	}
 	n = sel->histlnoff + arg->i;
@@ -772,13 +766,13 @@ history(const Arg *arg) {
 	if(sel->histlnoff) {
 		for(i = 0; i < sel->histsz && --n; i += strlen(&sel->hist[i]) + 2);
 		sel->cmdlen = strlen(&sel->hist[i]);
-		memcpy(sel->cmd, &sel->hist[i], sel->cmdlen);
+		memcpy(sel->cmdbuf, &sel->hist[i], sel->cmdlen);
 	}
 	else {
 		sel->cmdlen = 0;
 	}
 	sel->cmdoff = 0;
-	sel->cmd[sel->cmdlen] = '\0';
+	sel->cmdbuf[sel->cmdlen] = '\0';
 	sel->need_redraw |= REDRAW_CMDLN;
 }
 
@@ -792,9 +786,9 @@ histpush(char *buf, int len) {
 		if(!memcmp(&sel->hist[i], buf, len))
 			return;
 	}
-	i = sel->histsz;
 	if(sel->histsz)
-		i = ++sel->histsz;
+		++sel->histsz;
+	i = sel->histsz;
 	if(!(sel->hist = realloc(sel->hist, (sel->histsz += len + 1))))
 		die("Cannot realloc\n");
 	memcpy(&sel->hist[i], buf, len);
@@ -836,7 +830,7 @@ parsecmd(void) {
 	char *p, *tp;
 	int i, len;
 
-	p = &sel->cmd[1];
+	p = &sel->cmdbuf[1];
 	if(!*p)
 		return;
 	tp = p + 1;
@@ -985,7 +979,7 @@ recv_part(char *who, char *chan, char *txt) {
 	if(!b)
 		return;
 	if(strcmp(who, nick)) {
-		bprintf(b, "%CPART%..0C %s %s\n", colors[IRCMessage], who, txt);
+		bprintf(b, "%CPART%..0C %s (%s)\n", colors[IRCMessage], who, txt);
 		return;
 	}
 	if(b == sel) {
@@ -1225,42 +1219,44 @@ usrin(void) {
 	do {
 		if(key == '\n') {
 			b = sel;
-			logw(sel->cmd);
-			if(sel->cmd[0] == '\0')
+			logw(sel->cmdbuf);
+			if(sel->cmdbuf[0] == '\0')
 				return;
-			if(sel->cmd[0] == '/') {
+			if(sel->cmdbuf[0] == '/') {
 				if(sel->cmdlen == 1)
 					return;
-				histpush(sel->cmd, sel->cmdlen);
+				histpush(sel->cmdbuf, sel->cmdlen);
 				/* Note: network latency may delay drawings
 				 * causing visual glitches. */
 				parsecmd();
 			}
 			else {
-				histpush(sel->cmd, sel->cmdlen);
+				histpush(sel->cmdbuf, sel->cmdlen);
 				if(sel == status)
 					bprintf(sel, "Cannot send text here.\n");
 				else if(!srv)
 					bprintf(sel, "Not connected.\n");
 				else
-					privmsg(sel->name, sel->cmd);
+					privmsg(sel->name, sel->cmdbuf);
 			}
 			if(b == sel) {
-				b->cmd[sel->cmdlen = sel->cmdoff = sel->histlnoff = 0] = '\0';
+				sel->cmdlen = sel->cmdoff = sel->histlnoff = 0;
+				b->cmdbuf[sel->cmdlen] = '\0';
 				b->need_redraw |= REDRAW_CMDLN;
 			}
 		}
-		else if(isgraph(key) || (key == ' ' && sel->cmdlen)) {
-			if(sel->cmdlen == sizeof sel->cmd - 1) {
-				sel->cmd[sel->cmdoff] = key;
+		else if(isgraph(key) || key == ' ') {
+			if(sel->cmdlen == sizeof sel->cmdbuf - 1) {
+				sel->cmdbuf[sel->cmdoff] = key;
 				sel->need_redraw |= REDRAW_CMDLN;
 				return;
 			}
-			memmove(&sel->cmd[sel->cmdoff+1], &sel->cmd[sel->cmdoff],
+			memmove(&sel->cmdbuf[sel->cmdoff+1],
+				&sel->cmdbuf[sel->cmdoff],
 				sel->cmdlen - sel->cmdoff);
-			sel->cmd[sel->cmdoff] = key;
-			sel->cmd[++sel->cmdlen] = '\0';
-			if(sel->cmdlen < sizeof sel->cmd - 1)
+			sel->cmdbuf[sel->cmdoff] = key;
+			sel->cmdbuf[++sel->cmdlen] = '\0';
+			if(sel->cmdlen < sizeof sel->cmdbuf - 1)
 				++sel->cmdoff;
 			sel->need_redraw |= REDRAW_CMDLN;
 		}
