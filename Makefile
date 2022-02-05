@@ -4,7 +4,7 @@
 include config.mk
 
 APPNAME=circo
-SRC = ${APPNAME}.c
+SRC = ${APPNAME}.c printfc.c
 OBJ = ${SRC:.c=.o}
 
 all: options ${APPNAME}

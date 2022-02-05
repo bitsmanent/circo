@@ -1,7 +1,7 @@
 /* See LICENSE file for copyright and license details. */
 
 /* defaults */
-char host[32] = "irc.freenode.org";
+char host[32] = "irc.libera.chat";
 char port[8] = "6667";
 char nick[32] = {0}; /* 0 means getenv("USER") */
 char logfile[64] = "/tmp/circo.log";
@@ -12,7 +12,15 @@ char logfile[64] = "/tmp/circo.log";
 /* Used if no message is specified */
 #define QUIT_MESSAGE "circo"
 
-Command commands[] = {
+/* color scheme */
+static int colors[ColorLast][5] = {
+	[NickNormal] = {255, -1},
+	[NickMention] = {5, 0, 1, -1},
+	[IRCMessage] = {8, 0, -1},
+};
+
+/* available commands */
+static Command commands[] = {
 	/* command     function */
 	{ "close",     cmd_close },
 	{ "connect",   cmd_server },

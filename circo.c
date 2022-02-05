@@ -1,4 +1,14 @@
-/* claudio's IRC oasis */
+/* See LICENSE file for copyright and license details.
+ *
+ * circo is an IRC client...
+ *
+ * The messages handlers are organized in an array which is accessed whenever a
+ * new message has been fetched. This allows message dispatching in O(1) time.
+ *
+ * Keys are organized as arrays and defined in config.h.
+ *
+ * To understand everything else, start reading main().
+*/
 
 #include <ctype.h>
 #include <errno.h>
@@ -16,6 +26,8 @@
 #include <termios.h>
 #include <time.h>
 #include <unistd.h>
+
+#include "printfc.h"
 
 #include "arg.h"
 char *argv0;
@@ -52,6 +64,13 @@ char *argv0;
 /* enums */
 enum { KeyUp = -50, KeyDown, KeyRight, KeyLeft, KeyHome, KeyEnd, KeyDel, KeyPgUp, KeyPgDw, KeyBackspace };
 enum { LineToOffset, OffsetToLine, TotalLines }; /* bufinfo() flags */
+
+enum {
+	NickNormal,
+	NickMention,
+	IRCMessage,
+	ColorLast
+} Color;
 
 typedef union {
 	int i;
@@ -157,6 +176,7 @@ void setup(void);
 void sigwinch(int unused);
 char *skip(char *s, char c);
 void sout(char *fmt, ...);
+void strip_ctrlseqs(char *s);
 void trim(char *s);
 void usage(void);
 void usrin(void);
@@ -215,7 +235,8 @@ bprintf(Buffer *b, char *fmt, ...) {
 	tm = time(NULL);
         len = strftime(buf, sizeof(buf), TIMESTAMP_FORMAT, localtime(&tm));
 	va_start(ap, fmt);
-	len += vsnprintf(&buf[len], sizeof(buf) - len - 1, fmt, ap);
+	vsnprintfc(&buf[len], sizeof(buf) - len - 1, fmt, ap);
+	len += strlen(&buf[len]);
 	va_end(ap);
 	if(!b->size || b->len + len >= b->size)
 		if(!(b->data = realloc(b->data, b->size += len + BUFSZ)))
@@ -224,7 +245,15 @@ bprintf(Buffer *b, char *fmt, ...) {
 	b->len += len;
 	b->nlines = bufinfo(b->data, b->len, 0, TotalLines);
 	sel->need_redraw |= REDRAW_BUFFER;
+
+	/* It's easy to just logw() in bprintf() so we can log
+	 * anything in a single place. Though this force us to:
+	 * - log data in the same format as the actual UI, and
+	 * - strip control sequences (colors) from the buffer.
+	 * Apart from this all should be fine. */
+	strip_ctrlseqs(buf);
 	logw(buf);
+
 	return len;
 }
 
@@ -314,14 +343,14 @@ cmd_msg(char *cmd, char *s) {
 }
 
 void
-cmd_quit(char *cmd, char *s) {
+cmd_quit(char *cmd, char *msg) {
 	Buffer *b;
 
 	if(!srv) {
 		bprintf(sel, "/%s: not connected.\n", cmd);
 		return;
 	}
-	quit(s);
+	quit(*msg ? msg : QUIT_MESSAGE);
 	for(b = buffers; b; b = b->next)
 		bprintf(b, "Quit.\n");
 }
@@ -355,7 +384,7 @@ cmd_server(char *cmd, char *s) {
 	else
 		strncpy(host, t, sizeof host);
 	if(srv)
-		quit(NULL);
+		quit(QUIT_MESSAGE);
 	if(!*host) {
 		bprintf(status, "/%s: no host specified.\n", cmd);
 		return;
@@ -572,13 +601,24 @@ drawbuf(void) {
 	x = 1;
 	y = 2;
 	for(; i < sel->len; ++i) {
-		c = sel->data[i];
-		if(c != '\n' && x <= cols) {
-			x += mvprintf(x, y, "%c", c);
+
+		/* control sequences (for colors) */
+		if(sel->data[i] == 0x1b) {
+			while(!isalpha(sel->data[i]))
+				putchar(sel->data[i++]);
+			putchar(sel->data[i]);
 			continue;
 		}
-		if(c == '\n' && x <= cols)
+
+		c = sel->data[i];
+		if(x <= cols) {
+			if(c != '\n') {
+				x += mvprintf(x, y, "%c", c);
+				continue;
+			}
 			mvprintf(x, y, "%s", CLEARRIGHT);
+		}
+
 		x = 1;
 		if(++y == rows)
 			break;
@@ -597,22 +637,22 @@ drawbuf(void) {
 void
 drawcmdln(void) {
 	char buf[cols+1];
-	char prompt[64];
-	int pslen, cmdsz, cur, i, len;
+	char prompt[cols+1 + 31];
+	int pslen, cmdsz, i, len;
 
 	if(!(cols && rows))
 		return;
+
 	pslen = snprintf(prompt, sizeof prompt, "[%s] ", sel->name);
 	cmdsz = pslen < cols ? cols - pslen : 0;
 	if(cmdsz) {
-		cur = pslen + (sel->cmdoff % cmdsz) + 1;
+		sel->cmdcur = pslen + (sel->cmdoff % cmdsz) + 1;
 		i = cmdsz * (sel->cmdoff / cmdsz);
 	}
 	else {
-		cur = cols;
+		sel->cmdcur = cols;
 		i = 0;
 	}
-	sel->cmdcur = cur;
 	len = snprintf(buf, sizeof buf, "%s%s", prompt, &sel->cmd[i]);
 	mvprintf(1, rows, "%s%s", buf, len < cols ? CLEARRIGHT : "");
 }
@@ -858,7 +898,7 @@ privmsg(char *to, char *txt) {
 void
 quit(char *msg) {
 	if(srv)
-		sout("QUIT :%s", msg ? msg : QUIT_MESSAGE);
+		sout("QUIT :%s", msg);
 	hangsup();
 }
 
@@ -890,7 +930,8 @@ recv_join(char *who, char *chan, char *txt) {
 			return;
 		sel = b;
 	}
-	bprintf(b, "JOIN %s\n", who);
+	bprintf(b, "%CJOIN%..0C %s\n", colors[IRCMessage], who);
+
 	if(b == sel)
 		sel->need_redraw |= REDRAW_ALL;
 }
@@ -904,9 +945,9 @@ recv_kick(char *who, char *chan, char *txt) {
 	if(!b)
 		return;
 	if(strcmp(txt, nick))
-		bprintf(b, "KICK %s %s\n", who, txt);
+		bprintf(b, "%CKICK%..0C %s %s\n", colors[IRCMessage], who, txt);
 	else
-		bprintf(b, "Kicked.\n");
+		bprintf(b, "You got kicked from %s\n", chan);
 }
 
 void
@@ -928,13 +969,12 @@ recv_nick(char *who, char *u, char *txt) {
 		strcpy(nick, txt);
 		sel->need_redraw |= REDRAW_BAR;
 	}
-	bprintf(sel, "NICK %s: %s\n", who, txt);
+	bprintf(sel, "%CNICK%..0C %s: %s\n", colors[IRCMessage], who, txt);
 }
 
 void
 recv_notice(char *who, char *u, char *txt) {
-	/* XXX redirect to the relative buffer? */
-	bprintf(sel, "NOTICE: %s: %s\n", who, txt);
+	bprintf(sel, "%CNOTICE%..0C %s: %s\n", colors[IRCMessage], who, txt);
 }
 
 void
@@ -945,7 +985,7 @@ recv_part(char *who, char *chan, char *txt) {
 	if(!b)
 		return;
 	if(strcmp(who, nick)) {
-		bprintf(b, "PART %s %s\n", who, txt);
+		bprintf(b, "%CPART%..0C %s %s\n", colors[IRCMessage], who, txt);
 		return;
 	}
 	if(b == sel) {
@@ -964,18 +1004,20 @@ recv_ping(char *u, char *u2, char *txt) {
 void
 recv_privmsg(char *from, char *to, char *txt) {
 	Buffer *b;
+	int mention;
 
 	if(!strcmp(nick, to))
 		to = from;
 	b = getbuf(to);
 	if(!b)
 		b = newbuf(to);
-	bprintf(b, "%s: %s\n", from, txt);
+	mention = strstr(txt, nick) != NULL;
+	bprintf(b, "%C%s%..0C: %s\n", mention ? colors[NickMention] : colors[NickNormal], from, txt);
 }
 
 void
 recv_quit(char *who, char *u, char *txt) {
-	bprintf(sel, "QUIT %s (%s)\n", who, txt);
+	bprintf(sel, "%CQUIT%..0C %s (%s)\n", colors[IRCMessage], who, txt);
 }
 
 void
@@ -1136,6 +1178,21 @@ sout(char *fmt, ...) {
 	vsnprintf(bufout, sizeof bufout, fmt, ap);
 	va_end(ap);
 	fprintf(srv, "%s\r\n", bufout);
+}
+
+void
+strip_ctrlseqs(char *s) {
+	int i = 0;
+	char *c;
+
+	for(c = s; *c; ++c) {
+		if(*c == 0x1b) {
+			while(*++c && !isalpha(*c));
+			continue;
+		}
+		s[i++] = *c;
+	}
+	s[i] = '\0';
 }
 
 void
