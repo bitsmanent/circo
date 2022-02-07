@@ -38,6 +38,7 @@ static Key keys[] = {
         { CTRL('u'),      cmdln_clear,      {0} },
         { KeyBackspace,   cmdln_chldel,     {0} },
         { CTRL('d'),      cmdln_chrdel,     {0} },
+        { '\t',           cmdln_complete,   {0} },
         { CTRL('a'),      cmdln_cursor,     {.i = 0}},
         { CTRL('e'),      cmdln_cursor,     {.i = 999}},
         { CTRL('h'),      cmdln_cursor,     {.i = -1}},

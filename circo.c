@@ -10,6 +10,7 @@
  * To understand everything else, start reading main().
 */
 
+#define _GNU_SOURCE
 #include <ctype.h>
 #include <errno.h>
 #include <locale.h>
@@ -50,7 +51,6 @@ char *argv0;
 #define CURPOS          "\33[%d;%dH"
 #define CURSON          "\33[?25h"
 #define CURSOFF         "\33[?25l"
-#define TTLSET          "\33]0;%s\007"
 
 #if defined CTRL && defined _AIX
   #undef CTRL
@@ -123,6 +123,7 @@ void cmd_topic(char *cmd, char *s);
 void cmdln_chldel(const Arg *arg);
 void cmdln_chrdel(const Arg *arg);
 void cmdln_clear(const Arg *arg);
+void cmdln_complete(const Arg *arg);
 void cmdln_cursor(const Arg *arg);
 void cmdln_wdel(const Arg *arg);
 void detach(Buffer *b);
@@ -173,6 +174,7 @@ void strip_ctrlseqs(char *s);
 void trim(char *s);
 void usage(void);
 void usrin(void);
+char *wordleft(char *str, int offset, int *size);
 
 /* variables */
 FILE *srv, *logp;
@@ -391,7 +393,6 @@ cmd_server(char *cmd, char *s) {
 		bprintf(status, "Cannot connect to %s on port %s.\n", host, port);
 		return;
 	}
-	printf(TTLSET, host);
 	srv = fdopen(fd, "r+");
 	setbuf(srv, NULL);
 	sout("NICK %s", nick);
@@ -471,6 +472,61 @@ cmdln_clear(const Arg *arg) {
 	sel->cmdlen -= sel->cmdoff;
 	sel->cmdbuf[sel->cmdlen] = '\0';
 	sel->cmdoff = 0;
+	sel->need_redraw |= REDRAW_CMDLN;
+}
+
+void
+cmdln_complete(const Arg *arg) {
+	char word[200]; /* 200 is max chan length */
+	char *ws, *we, *epos, *match;
+	int wlen, mlen, newlen, i;
+
+	if(!sel->cmdlen)
+		return;
+	ws = wordleft(sel->cmdbuf, sel->cmdoff, &wlen);
+	if(!ws || wlen > sizeof word)
+		return;
+	memcpy(word, ws, wlen);
+	word[wlen] = '\0';
+
+	/* actual search */
+	if(word[0] == '/') {
+		/* search in commands */
+		for(i = 0; i < LENGTH(commands); ++i)
+			if((match = strcasestr(commands[i].name, &word[1])))
+				break;
+		if(!match)
+			return;
+		mlen = strlen(match);
+
+		/* preserve the slash */
+		++ws;
+		--wlen;
+	}
+	else if(ISCHANPFX(word[0])) {
+		/* search buffer name */
+		if(!(match = strcasestr(sel->name, word)))
+			return;
+		mlen = strlen(match);
+	}
+	else {
+		/* TODO: match a nick in current buffer */
+	}
+
+	we = ws + wlen;
+	epos = &sel->cmdbuf[sel->cmdoff] > we ? &sel->cmdbuf[sel->cmdoff] : we;
+
+	/* check if match exceed buffer size */
+	newlen = sel->cmdlen - (epos - ws) + mlen;
+	if(newlen > sizeof sel->cmdbuf - 1)
+		return;
+
+	memmove(ws+mlen, epos, sel->cmdlen - (epos - sel->cmdbuf));
+	memcpy(ws, match, mlen);
+
+	sel->cmdlen = newlen;
+	sel->cmdbuf[sel->cmdlen] = '\0';
+	sel->cmdoff = ws - sel->cmdbuf + mlen;
 	sel->need_redraw |= REDRAW_CMDLN;
 }
 
@@ -1263,6 +1319,23 @@ usrin(void) {
 	} while((key = getkey()) != -1);
 }
 
+char *
+wordleft(char *str, int offset, int *size) {
+	char *s = &str[offset], *e;
+
+	while(s != str && (*s == ' ' || *s == '\0'))
+		--s;
+	if(!*s || *s == ' ')
+		return NULL;
+	while(s != str && *(s - 1) != ' ')
+		--s;
+	if(size) {
+		for(e = s + 1; *e != '\0' && *e != ' '; ++e);
+		*size = e - s;
+	}
+	return s;
+}
+
 int
 main(int argc, char *argv[]) {
 	const char *user = getenv("USER");
@@ -1278,7 +1351,6 @@ main(int argc, char *argv[]) {
 
 	if(!*nick)
 		strncpy(nick, user ? user : "circo", sizeof nick);
-	printf(TTLSET, "circo");
 	setup();
 	if(*logfile)
 		logp = fopen(logfile, "a");
@@ -1290,6 +1362,5 @@ main(int argc, char *argv[]) {
 	run();
 	mvprintf(1, rows, "\n");
 	cleanup();
-	printf(TTLSET, "");
 	return 0;
 }
