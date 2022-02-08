@@ -20,6 +20,7 @@ one would expect from an IRC client for the console:
 - Command history
 - Raw IRC commands
 - Colors support
+- Tab completion
 
 None of the CTCP specification has been (nor will be) implemented, which means
 no DCC at all. In other words: direct chat and files sending are not available.
