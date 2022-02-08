@@ -78,17 +78,25 @@ typedef union {
 	const void *v;
 } Arg;
 
+typedef struct Nick Nick;
+struct Nick {
+	char name[16];
+	int len;
+	Nick *next;
+};
+
 typedef struct Buffer Buffer;
 struct Buffer {
 	char *data;
-	char name[128];
+	char name[64];
 	char *hist;
 	char cmdbuf[256];
-	int size, len;
+	int size, len, kicked;
 	int line, nlines, lnoff;
 	int cmdlen, cmdoff, cmdpos;
 	int histsz, histlnoff;
 	int need_redraw;
+	Nick *names;
 	Buffer *next;
 };
 
@@ -145,6 +153,12 @@ void histpush(char *buf, int len);
 void logw(char *txt);
 int mvprintf(int x, int y, char *fmt, ...);
 Buffer *newbuf(char *name);
+Nick *nickadd(Buffer *b, char *name);
+void nickdel(Buffer *b, char *name);
+Nick *nickget(Buffer *b, char *name);
+void nicklist(Buffer *b, char *list);
+void nickmdel(char *name);
+void nickmv(char *old, char *new);
 void parsecmd(void);
 void parsesrv(void);
 void privmsg(char *to, char *txt);
@@ -155,6 +169,7 @@ void recv_join(char *who, char *chan, char *txt);
 void recv_kick(char *who, char *chan, char *txt);
 void recv_mode(char *u, char *val, char *u2);
 void recv_motd(char *u, char *u2, char *txt);
+void recv_names(char *usr, char *par, char *txt);
 void recv_nick(char *who, char *u, char *txt);
 void recv_notice(char *who, char *u, char *txt);
 void recv_part(char *who, char *chan, char *txt);
@@ -163,7 +178,6 @@ void recv_privmsg(char *from, char *to, char *txt);
 void recv_quit(char *who, char *u, char *txt);
 void recv_topic(char *who, char *chan, char *txt);
 void recv_topicrpl(char *usr, char *par, char *txt);
-void recv_users(char *usr, char *par, char *txt);
 void resize(int x, int y);
 void scroll(const Arg *arg);
 void setup(void);
@@ -199,13 +213,14 @@ Message messages[] = {
 	{ "TOPIC",   recv_topic },
 	{ "331",     recv_topicrpl }, /* no topic set */
 	{ "332",     recv_topicrpl },
-	{ "353",     recv_users },
+	{ "353",     recv_names },
 	{ "372",     recv_motd },
 	{ "433",     recv_busynick },
 	{ "437",     recv_busynick },
 
 	/* ignored */
 	{ "PONG",    NULL },
+	{ "366",     NULL }, /* end of names */
 	{ "470",     NULL }, /* channel forward */
 
 };
@@ -303,7 +318,7 @@ cmd_close(char *cmd, char *s) {
 		bprintf(status, "/%s: cannot close the status.\n", cmd);
 		return;
 	}
-	if(srv && ISCHAN(b))
+	if(srv && ISCHAN(b) && !b->kicked)
 		sout("PART :%s", b->name); /* Note: you may be not in that channel */
 	if(b == sel) {
 		sel = sel->next ? sel->next : buffers;
@@ -477,9 +492,10 @@ cmdln_clear(const Arg *arg) {
 
 void
 cmdln_complete(const Arg *arg) {
-	char word[200]; /* 200 is max chan length */
-	char *ws, *we, *epos, *match;
+	char word[64];
+	char *match = NULL, *ws, *we, *epos;
 	int wlen, mlen, newlen, i;
+	Nick *n;
 
 	if(!sel->cmdlen)
 		return;
@@ -492,25 +508,32 @@ cmdln_complete(const Arg *arg) {
 	/* actual search */
 	if(word[0] == '/') {
 		/* search in commands */
-		for(i = 0; i < LENGTH(commands); ++i)
-			if((match = strcasestr(commands[i].name, &word[1])))
-				break;
+		for(i = 0; i < LENGTH(commands) && !match; ++i)
+			if(!strncasecmp(commands[i].name, &word[1], wlen - 1))
+				match = commands[i].name;
 		if(!match)
 			return;
 		mlen = strlen(match);
-
 		/* preserve the slash */
 		++ws;
 		--wlen;
 	}
 	else if(ISCHANPFX(word[0])) {
 		/* search buffer name */
-		if(!(match = strcasestr(sel->name, word)))
+		if(strncasecmp(sel->name, word, wlen))
 			return;
+		match = sel->name;
 		mlen = strlen(match);
 	}
 	else {
-		/* TODO: match a nick in current buffer */
+		/* match a nick in current buffer */
+		for(n = sel->names; n && !match; n = n->next)
+			if(!strncasecmp(n->name, word, wlen))
+				break;
+		if(!n)
+			return;
+		match = n->name;
+		mlen = n->len;
 	}
 
 	we = ws + wlen;
@@ -749,6 +772,12 @@ focusprev(const Arg *arg) {
 
 void
 freebuf(Buffer *b) {
+	Nick *n;
+
+	while((n = b->names)) {
+		b->names = b->names->next;
+		free(n);
+	}
 	free(b->hist);
 	free(b->data);
 	free(b);
@@ -881,6 +910,83 @@ newbuf(char *name) {
 	return b;
 }
 
+Nick *
+nickadd(Buffer *b, char *name) {
+	Nick *n;
+
+	n = ecalloc(1, sizeof(Nick));
+	strncpy(n->name, name, sizeof n->name - 1);
+	n->len = strlen(n->name);
+
+	/* attach */
+	n->next = b->names;
+	b->names = n;
+	return n;
+}
+
+void
+nickdel(Buffer *b, char *name) {
+	Nick *n, **tn;
+
+	if(!b)
+		return;
+	if(!(n = nickget(b, name)))
+		return;
+	/* detach */
+	for(tn = &b->names; *tn && *tn != n; tn = &(*tn)->next);
+	*tn = n->next;
+	free(n);
+}
+
+Nick *
+nickget(Buffer *b, char *name) {
+	Nick *n;
+
+	for(n = b->names; n; n = n->next)
+		if(!strcmp(n->name, name))
+			return n;
+	return NULL;
+}
+
+void
+nicklist(Buffer *b, char *list) {
+	Nick *n;
+	char *p, *np;
+
+	while((n = b->names)) {
+		b->names = b->names->next;
+		free(n);
+	}
+	for(p = list, np = skip(list, ' '); *p; p = np, np = skip(np, ' ')) {
+		/* skip nick flags */
+		if(!isalnum(*p))
+			++p;
+		nickadd(b, p);
+	}
+}
+
+void
+nickmdel(char *name) {
+	Buffer *b;
+
+	for(b = buffers; b; b = b->next)
+		nickdel(b, name);
+}
+
+void
+nickmv(char *old, char *new) {
+	Buffer *b;
+	Nick *n;
+
+	for(b = buffers; b; b = b->next) {
+		n = nickget(b, old);
+		if(!n)
+			continue;
+		strncpy(n->name, new, sizeof n->name - 1);
+		n->len = strlen(n->name);
+	}
+}
+
 void
 parsecmd(void) {
 	char *p, *tp;
@@ -972,32 +1078,34 @@ recv_join(char *who, char *chan, char *txt) {
 	if(!*chan)
 		chan = txt;
 	b = getbuf(chan);
-	if(!b) {
-		if(strcmp(who, nick)) /* this should never happen here */
-			return;
+	if(!b)
 		b = newbuf(chan);
-		if(!b) /* malformed message */
-			return;
-		sel = b;
-	}
+	if(sel->kicked)
+		sel->kicked = 0;
+	sel = b;
 	bprintf(b, "%CJOIN%..0C %s\n", colors[IRCMessage], who);
-
+	if(strcmp(who, nick))
+		nickadd(b, who);
 	if(b == sel)
 		sel->need_redraw |= REDRAW_ALL;
 }
 
 void
-recv_kick(char *who, char *chan, char *txt) {
+recv_kick(char *oper, char *chan, char *who) {
 	Buffer *b;
 
-	txt = skip(chan, ' ');
+	who = skip(chan, ' ');
 	b = getbuf(chan);
 	if(!b)
 		return;
-	if(strcmp(txt, nick))
-		bprintf(b, "%CKICK%..0C %s %s\n", colors[IRCMessage], who, txt);
-	else
+	if(!strcmp(who, nick)) {
+		b->kicked = 1;
 		bprintf(b, "You got kicked from %s\n", chan);
+	}
+	else {
+		bprintf(b, "%CKICK%..0C %s (%s)\n", colors[IRCMessage], who, oper);
+		nickdel(b, who);
+	}
 }
 
 void
@@ -1013,13 +1121,27 @@ recv_motd(char *u, char *u2, char *txt) {
 	bprintf(status, "%s\n", txt);
 }
 
+/* TODO: names should be added until RPL_ENDOFNAMES */
 void
-recv_nick(char *who, char *u, char *txt) {
+recv_names(char *host, char *par, char *names) {
+	char *chan = skip(skip(par, ' '), ' '); /* skip user and symbol */
+	Buffer *b = getbuf(chan);
+
+	/* NAMES works even if channel is not joined or not specified (which
+	 * means all public channels) thus b may be NULL. */
+	bprintf(sel, "Users in %s: %s\n", chan, names);
+	if(b)
+		nicklist(b, names); /* must be last because change names with skip() */
+}
+
+void
+recv_nick(char *who, char *u, char *upd) {
 	if(!strcmp(who, nick)) {
-		strcpy(nick, txt);
+		strcpy(nick, upd);
 		sel->need_redraw |= REDRAW_BAR;
 	}
-	bprintf(sel, "%CNICK%..0C %s: %s\n", colors[IRCMessage], who, txt);
+	bprintf(sel, "%CNICK%..0C %s: %s\n", colors[IRCMessage], who, upd);
+	nickmv(who, upd);
 }
 
 void
@@ -1036,6 +1158,7 @@ recv_part(char *who, char *chan, char *txt) {
 		return;
 	if(strcmp(who, nick)) {
 		bprintf(b, "%CPART%..0C %s (%s)\n", colors[IRCMessage], who, txt);
+		nickdel(b, who);
 		return;
 	}
 	if(b == sel) {
@@ -1079,12 +1202,6 @@ void
 recv_topicrpl(char *usr, char *par, char *txt) {
 	char *chan = skip(par, ' ');
 	bprintf(sel, "Topic on %s is %s\n", chan, txt);
-}
-
-void
-recv_users(char *usr, char *par, char *txt) {
-	char *chan = skip(par, '@') + 1;
-	bprintf(sel, "Users in %s: %s\n", chan, txt);
 }
 
 void

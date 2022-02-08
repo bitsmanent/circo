@@ -14,7 +14,7 @@ char logfile[64] = "/tmp/circo.log";
 
 /* color scheme */
 static int colors[ColorLast][5] = {
-	[NickNormal] = {255, -1},
+	[NickNormal] = {4, -1},
 	[NickMention] = {5, 0, 1, -1},
 	[IRCMessage] = {8, 0, -1},
 };
