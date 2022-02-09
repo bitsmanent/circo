@@ -1142,17 +1142,13 @@ recv_names(char *host, char *par, char *names) {
 
 void
 recv_namesend(char *host, char *par, char *names) {
-	Buffer *b;
-	char *chan;
-
-	par = skip(par, ' ');
-	chan = skip(par, ' ');
-	b = getbuf(chan);
+	char *chan = skip(par, ' ');
+	Buffer *b = getbuf(chan);
 
 	if(!b)
 		b = status;
 	if(!b->recvnames) {
-		bprintf(sel, "%s: no names\n", par);
+		bprintf(sel, "%s: no names\n", chan);
 		return;
 	}
 	b->recvnames = 0;
