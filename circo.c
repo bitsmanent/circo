@@ -95,6 +95,7 @@ struct Buffer {
 	int line, nlines, lnoff;
 	int cmdlen, cmdoff, cmdpos;
 	int histsz, histlnoff;
+	int recvnames;
 	int need_redraw;
 	Nick *names;
 	Buffer *next;
@@ -146,6 +147,7 @@ Buffer *getbuf(char *name);
 void focusnext(const Arg *arg);
 void focusprev(const Arg *arg);
 void freebuf(Buffer *b);
+void freenames(Nick **names);
 int getkey(void);
 void hangsup(void);
 void history(const Arg *arg);
@@ -170,6 +172,7 @@ void recv_kick(char *who, char *chan, char *txt);
 void recv_mode(char *u, char *val, char *u2);
 void recv_motd(char *u, char *u2, char *txt);
 void recv_names(char *usr, char *par, char *txt);
+void recv_namesend(char *host, char *par, char *names);
 void recv_nick(char *who, char *u, char *txt);
 void recv_notice(char *who, char *u, char *txt);
 void recv_part(char *who, char *chan, char *txt);
@@ -214,13 +217,13 @@ Message messages[] = {
 	{ "331",     recv_topicrpl }, /* no topic set */
 	{ "332",     recv_topicrpl },
 	{ "353",     recv_names },
+	{ "366",     recv_namesend },
 	{ "372",     recv_motd },
 	{ "433",     recv_busynick },
 	{ "437",     recv_busynick },
 
 	/* ignored */
 	{ "PONG",    NULL },
-	{ "366",     NULL }, /* end of names */
 	{ "470",     NULL }, /* channel forward */
 
 };
@@ -772,15 +775,20 @@ focusprev(const Arg *arg) {
 
 void
 freebuf(Buffer *b) {
-	Nick *n;
-
-	while((n = b->names)) {
-		b->names = b->names->next;
-		free(n);
-	}
+	freenames(&b->names);
 	free(b->hist);
 	free(b->data);
 	free(b);
+}
+
+void
+freenames(Nick **names) {
+	Nick *n;
+
+	while((n = *names)) {
+		*names = (*names)->next;
+		free(n);
+	}
 }
 
 Buffer *
@@ -950,13 +958,8 @@ nickget(Buffer *b, char *name) {
 
 void
 nicklist(Buffer *b, char *list) {
-	Nick *n;
 	char *p, *np;
 
-	while((n = b->names)) {
-		b->names = b->names->next;
-		free(n);
-	}
 	for(p = list, np = skip(list, ' '); *p; p = np, np = skip(np, ' ')) {
 		/* skip nick flags */
 		if(!isalnum(*p))
@@ -1014,6 +1017,7 @@ void
 parsesrv(void) {
 	char *cmd, *usr, *par, *txt;
 
+	//bprintf(status, "DEBUG | < | %s", bufin);
 	cmd = bufin;
 	usr = host;
 	if(!cmd || !*cmd)
@@ -1121,17 +1125,40 @@ recv_motd(char *u, char *u2, char *txt) {
 	bprintf(status, "%s\n", txt);
 }
 
-/* TODO: names should be added until RPL_ENDOFNAMES */
 void
 recv_names(char *host, char *par, char *names) {
 	char *chan = skip(skip(par, ' '), ' '); /* skip user and symbol */
 	Buffer *b = getbuf(chan);
 
-	/* NAMES works even if channel is not joined or not specified (which
-	 * means all public channels) thus b may be NULL. */
-	bprintf(sel, "Users in %s: %s\n", chan, names);
-	if(b)
-		nicklist(b, names); /* must be last because change names with skip() */
+	if(!b)
+		b = status;
+	if(!b->recvnames) {
+		b->recvnames = 1;
+		freenames(&b->names);
+	}
+	bprintf(sel, "NAMES in %s: %s\n", chan, names);
+	nicklist(b, names); /* keep as last since names is altered by skip() */
+}
+
+void
+recv_namesend(char *host, char *par, char *names) {
+	Buffer *b;
+	char *chan;
+
+	par = skip(par, ' ');
+	chan = skip(par, ' ');
+	b = getbuf(chan);
+
+	if(!b)
+		b = status;
+	if(!b->recvnames) {
+		bprintf(sel, "%s: no names\n", par);
+		return;
+	}
+	b->recvnames = 0;
+	/* we don't actually need these */
+	if(b == status)
+		freenames(&b->names);
 }
 
 void
@@ -1342,6 +1369,7 @@ sout(char *fmt, ...) {
 	va_list ap;
 
 	va_start(ap, fmt);
+	//bprintf(status, "DEBUG | > | %s\n", bufout);
 	vsnprintf(bufout, sizeof bufout, fmt, ap);
 	va_end(ap);
 	fprintf(srv, "%s\r\n", bufout);

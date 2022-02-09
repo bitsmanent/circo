@@ -27,8 +27,8 @@ no DCC at all. In other words: direct chat and files sending are not available.
 
 Status
 ======
-Some refactor and cleanups are needed but it's almost ready for the 0.1. UTF-8
-is not currently supported and I'm not sure it will ever be.
+Some refactor and cleanups are needed but it's mostly working. UTF-8 is not
+currently supported.
 
 The circo IRC client is actively developed and I'm having a lot of fun in
 writing it. If you'll also find yourself having fun with circo, please consider
