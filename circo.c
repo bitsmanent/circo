@@ -1104,6 +1104,7 @@ recv_kick(char *oper, char *chan, char *who) {
 		return;
 	if(!strcmp(who, nick)) {
 		b->kicked = 1;
+		freenames(&b->names); /* we don't need this anymore */
 		bprintf(b, "You got kicked from %s\n", chan);
 	}
 	else {
