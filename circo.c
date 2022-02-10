@@ -1077,21 +1077,21 @@ recv_busynick(char *u, char *u2, char *u3) {
 
 void
 recv_join(char *who, char *chan, char *txt) {
-	Buffer *b;
+	Buffer *b = getbuf(chan);
 
-	if(!*chan)
-		chan = txt;
-	b = getbuf(chan);
-	if(!b)
-		b = newbuf(chan);
-	if(sel->kicked)
-		sel->kicked = 0;
-	sel = b;
-	bprintf(b, "%CJOIN%..0C %s\n", colors[IRCMessage], who);
-	if(strcmp(who, nick))
+	if(!strcmp(who, nick)) {
+		if(!b)
+			b = newbuf(chan);
+		else
+			b->kicked = 0; /* b may only be non-NULL due to this */
+		sel = b;
+	}
+	else {
 		nickadd(b, who);
+	}
+	bprintf(b, "%CJOIN%..0C %s\n", colors[IRCMessage], who);
 	if(b == sel)
-		sel->need_redraw |= REDRAW_ALL;
+		b->need_redraw |= REDRAW_ALL;
 }
 
 void
