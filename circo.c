@@ -1213,6 +1213,7 @@ recv_privmsg(char *from, char *to, char *txt) {
 
 void
 recv_quit(char *who, char *u, char *txt) {
+	nickmdel(who);
 	bprintf(sel, "%CQUIT%..0C %s (%s)\n", colors[IRCMessage], who, txt);
 }
 
