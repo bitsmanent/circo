@@ -7,7 +7,7 @@ char nick[32] = {0}; /* 0 means getenv("USER") */
 char logfile[64] = "/tmp/circo.log";
 
 /* Timestamp format; see strftime(3). */
-#define TIMESTAMP_FORMAT "%d/%m %T | "
+#define TIMESTAMP_FORMAT "%T | "
 
 /* Used if no message is specified */
 #define QUIT_MESSAGE "circo"
@@ -45,6 +45,7 @@ static Key keys[] = {
         { KeyLeft,        cmdln_cursor,     {.i = -1}},
         { CTRL('l'),      cmdln_cursor,     {.i = +1}},
         { KeyRight,       cmdln_cursor,     {.i = +1}},
+        { '\n',           cmdln_submit,     {0} },
         { CTRL('w'),      cmdln_wdel,       {0} },
         { CTRL('n'),      focusnext,        {0} },
         { CTRL('p'),      focusprev,        {0} },

@@ -13,22 +13,21 @@ circo is unique.
 Altough it's compactness, circo is a powerful tool with almost all the features
 one would expect from an IRC client for the console:
 
-- Per-channel/query buffers
-- Command line
-- Infinite scrolling
-- Resize handling
-- Command history
-- Raw IRC commands
+- UTF-8 support
 - Colors support
 - Tab completion
+- One screen per chan/user
+- Infinite scrolling
+- Resize handling
+- Commands history
+- Raw IRC commands
 
 None of the CTCP specification has been (nor will be) implemented, which means
 no DCC at all. In other words: direct chat and files sending are not available.
 
 Status
 ======
-Some refactor and cleanups are needed but it's mostly working. UTF-8 is not
-currently supported.
+Some refactor and cleanups are needed but it's mostly working.
 
 The circo IRC client is actively developed and I'm having a lot of fun in
 writing it. If you'll also find yourself having fun with circo, please consider

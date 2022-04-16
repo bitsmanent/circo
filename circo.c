@@ -27,6 +27,7 @@
 #include <termios.h>
 #include <time.h>
 #include <unistd.h>
+#include <wchar.h>
 
 #include "printfc.h"
 
@@ -37,6 +38,13 @@ char *argv0;
 #define LENGTH(X)       (sizeof X / sizeof X[0])
 #define ISCHANPFX(P)    ((P) == '#' || (P) == '&')
 #define ISCHAN(B)       ISCHANPFX((B)->name[0])
+
+/* UTF-8 utils */
+#define UTF8BYTES(X)    ( ((X) & 0xF0) == 0xF0 ? 4 \
+			: ((X) & 0xE0) == 0xE0 ? 3 \
+			: ((X) & 0xC0) == 0xC0 ? 2 \
+			: 1)
+#define UTF8CBYTE(X)    (((X) & 0xC0) == 0x80)
 
 /* drawing flags */
 #define REDRAW_BAR      1<<1
@@ -61,7 +69,7 @@ char *argv0;
 #define CTRL_ALT(k) ((k) + (129 - 'a'))
 
 /* enums */
-enum { KeyUp = -50, KeyDown, KeyRight, KeyLeft, KeyHome, KeyEnd, KeyDel, KeyPgUp, KeyPgDw, KeyBackspace };
+enum { KeyFirst = -999, KeyUp, KeyDown, KeyRight, KeyLeft, KeyHome, KeyEnd, KeyDel, KeyPgUp, KeyPgDw, KeyBackspace, KeyLast };
 enum { LineToOffset, OffsetToLine, TotalLines }; /* bufinfo() flags */
 
 enum {
@@ -134,6 +142,7 @@ void cmdln_chrdel(const Arg *arg);
 void cmdln_clear(const Arg *arg);
 void cmdln_complete(const Arg *arg);
 void cmdln_cursor(const Arg *arg);
+void cmdln_submit(const Arg *arg);
 void cmdln_wdel(const Arg *arg);
 void detach(Buffer *b);
 int dial(char *host, char *port);
@@ -148,6 +157,8 @@ void focusnext(const Arg *arg);
 void focusprev(const Arg *arg);
 void freebuf(Buffer *b);
 void freenames(Nick **names);
+char *gcsfitcols(char *s, int maxw);
+int gcswidth(char *s, int len);
 int getkey(void);
 void hangsup(void);
 void history(const Arg *arg);
@@ -191,6 +202,7 @@ void strip_ctrlseqs(char *s);
 void trim(char *s);
 void usage(void);
 void usrin(void);
+int utf8len(char *s, size_t sz);
 char *wordleft(char *str, int offset, int *size);
 
 /* variables */
@@ -454,30 +466,44 @@ cmd_topic(char *cmd, char *s) {
 
 void
 cmdln_chldel(const Arg *arg) {
+	int nb;
+
 	if(!sel->cmdoff)
 		return;
+	for(nb = 1; UTF8CBYTE(sel->cmdbuf[sel->cmdoff - nb]); ++nb);
 	if(sel->cmdoff < sel->cmdlen)
-		memmove(&sel->cmdbuf[sel->cmdoff - 1], &sel->cmdbuf[sel->cmdoff],
+		memmove(&sel->cmdbuf[sel->cmdoff - nb], &sel->cmdbuf[sel->cmdoff],
 			sel->cmdlen - sel->cmdoff);
-	sel->cmdbuf[--sel->cmdlen] = '\0';
-	--sel->cmdoff;
+	sel->cmdlen -= nb;
+	sel->cmdoff -= nb;
+	sel->cmdbuf[sel->cmdlen] = '\0';
 	sel->need_redraw |= REDRAW_CMDLN;
 }
 
 void
 cmdln_chrdel(const Arg *arg) {
+	int nb;
+
 	if(!sel->cmdlen)
 		return;
 	if(sel->cmdoff == sel->cmdlen) {
-		--sel->cmdoff;
+		for(nb = 1; UTF8CBYTE(sel->cmdbuf[sel->cmdoff - nb]); ++nb);
+		sel->cmdoff -= nb;
 		sel->need_redraw |= REDRAW_CMDLN;
 		return;
 	}
-	memmove(&sel->cmdbuf[sel->cmdoff], &sel->cmdbuf[sel->cmdoff + 1],
-		sel->cmdlen - sel->cmdoff - 1);
-	sel->cmdbuf[--sel->cmdlen] = '\0';
-	if(sel->cmdoff && sel->cmdoff == sel->cmdlen)
-		--sel->cmdoff;
+	nb = UTF8BYTES(sel->cmdbuf[sel->cmdoff]);
+	memmove(&sel->cmdbuf[sel->cmdoff], &sel->cmdbuf[sel->cmdoff + nb],
+		sel->cmdlen - sel->cmdoff);
+
+	sel->cmdlen -= nb;
+	sel->cmdbuf[sel->cmdlen] = '\0';
+
+	if(sel->cmdoff && sel->cmdoff == sel->cmdlen) {
+		for(nb = 1; UTF8CBYTE(sel->cmdbuf[sel->cmdoff - nb]); ++nb);
+		sel->cmdoff -= nb;
+	}
+
 	sel->need_redraw |= REDRAW_CMDLN;
 }
 
@@ -558,20 +584,61 @@ cmdln_complete(const Arg *arg) {
 
 void
 cmdln_cursor(const Arg *arg) {
-	if(!arg->i) {
+	int i = arg->i, nb;
+
+	if(!i) {
 		sel->cmdoff = 0;
+		sel->need_redraw |= REDRAW_CMDLN;
+		return;
+	}
+	if(i < 0) {
+		nb = 1;
+		while(++i <= 0)
+			while(UTF8CBYTE(sel->cmdbuf[sel->cmdoff - nb]))
+				++nb;
+		nb = -nb;
 	}
 	else {
-		sel->cmdoff += arg->i;
-		if(sel->cmdoff < 0) {
-			sel->cmdoff = 0;
-		}
-		else if(sel->cmdoff > sel->cmdlen - 1) {
-			sel->cmdoff = sel->cmdlen - 1;
-			if(sel->cmdlen < sizeof sel->cmdbuf - 1)
-				++sel->cmdoff;
-		}
+		nb = 0;
+		while(--i >= 0)
+			nb += UTF8BYTES(sel->cmdbuf[sel->cmdoff + nb]);
 	}
+
+	sel->cmdoff += nb;
+	if(sel->cmdoff < 0)
+		sel->cmdoff = 0;
+	else if(sel->cmdoff > sel->cmdlen)
+		sel->cmdoff = sel->cmdlen;
+	sel->need_redraw |= REDRAW_CMDLN;
+}
+
+void
+cmdln_submit(const Arg *arg) {
+	logw(sel->cmdbuf);
+	logw("\n");
+	if(sel->cmdbuf[0] == '\0')
+		return;
+	if(sel->cmdbuf[0] == '/') {
+		if(sel->cmdlen == 1)
+			return;
+		histpush(sel->cmdbuf, sel->cmdlen);
+		/* Note: network latency may delay drawings
+		 * causing visual glitches. */
+		parsecmd();
+	}
+	else {
+		histpush(sel->cmdbuf, sel->cmdlen);
+		if(sel == status) {
+			bprintf(sel, "Cannot send text here.\n");
+			return;
+		}
+		else if(!srv)
+			bprintf(sel, "Not connected.\n");
+		else
+			privmsg(sel->name, sel->cmdbuf);
+	}
+	sel->cmdlen = sel->cmdoff = sel->histlnoff = 0;
+	sel->cmdbuf[sel->cmdlen] = '\0';
 	sel->need_redraw |= REDRAW_CMDLN;
 }
 
@@ -665,7 +732,7 @@ drawbar(void) {
 
 void
 drawbuf(void) {
-	int x, y, c, i;
+	int x, y, c, i, nb, nx;
 
 	if(!(cols && rows && sel->len))
 		return;
@@ -676,6 +743,7 @@ drawbuf(void) {
 		: bufinfo(sel->data, sel->len, 1 + (sel->nlines > x ? y : 0), LineToOffset);
 	x = 1;
 	y = 2;
+
 	for(; i < sel->len; ++i) {
 
 		/* control sequences (for colors) */
@@ -689,8 +757,14 @@ drawbuf(void) {
 		c = sel->data[i];
 		if(x <= cols) {
 			if(c != '\n') {
-				x += mvprintf(x, y, "%c", c);
-				continue;
+				nb = UTF8BYTES(c);
+				nx = x + gcswidth(&sel->data[i], 1);
+				if(nx - 1 <= cols) {
+					mvprintf(x, y, "%.*s", nb, &sel->data[i]);
+					x = nx;
+					i += nb - 1;
+					continue;
+				}
 			}
 			mvprintf(x, y, "%s", CLEARRIGHT);
 		}
@@ -698,8 +772,12 @@ drawbuf(void) {
 		x = 1;
 		if(++y == rows)
 			break;
-		if(c != '\n')
-			x += mvprintf(x, y, "%c", c);
+		if(c != '\n') {
+			nb = UTF8BYTES(c);
+			mvprintf(x, y, "%.*s", nb, &sel->data[i]);
+			x += gcswidth(&sel->data[i], 1);
+			i += nb - 1;
+		}
 		if(x > cols && i < sel->len - 1 && sel->data[i + 1] == '\n')
 			++i;
 	}
@@ -712,25 +790,43 @@ drawbuf(void) {
 
 void
 drawcmdln(void) {
-	char buf[cols+1];
-	char prompt[cols+1 + 31];
-	int pslen, cmdsz, i, len;
+	char prompt[64], *buf, *p;
+	int s, w; /* size and width */
+	int x = 1, colw = cols;
 
-	if(!(cols && rows))
-		return;
+	sel->cmdpos = 1;
 
-	pslen = snprintf(prompt, sizeof prompt, "[%s] ", sel->name);
-	cmdsz = pslen < cols ? cols - pslen : 0;
-	if(cmdsz) {
-		sel->cmdpos = pslen + (sel->cmdoff % cmdsz) + 1;
-		i = cmdsz * (sel->cmdoff / cmdsz);
+	/* prompt */
+	s = snprintf(prompt, sizeof prompt, "[%s] ", sel->name);
+	w = gcswidth(prompt, colw - 1);
+	if(w > 0) {
+		s = gcsfitcols(prompt, colw - 1) - prompt;
+		mvprintf(x, rows, "%.*s", s, prompt);
+		x += w;
+		colw -= w;
+		sel->cmdpos += w;
 	}
-	else {
-		sel->cmdpos = cols;
-		i = 0;
+
+	/* buffer */
+	for(p = buf = sel->cmdbuf; p < &sel->cmdbuf[sel->cmdoff]; p = gcsfitcols(p, colw)) {
+		if(p != sel->cmdbuf && p == buf)
+			break;
+		buf = p;
 	}
-	len = snprintf(buf, sizeof buf, "%s%s", prompt, &sel->cmdbuf[i]);
-	mvprintf(1, rows, "%s%s", buf, len < cols ? CLEARRIGHT : "");
+	w = gcswidth(buf, colw);
+
+	/* leave room for the cursor */
+	if(w >= colw && p == &sel->cmdbuf[sel->cmdoff]) {
+		buf = p;
+		w = gcswidth(buf, colw);
+	}
+
+	s = w ? gcsfitcols(buf, colw) - buf : 0;
+	mvprintf(x, rows, "%.*s%s", s, buf, w < colw ? CLEARRIGHT : "");
+
+	/* cursor position */
+	for(p = buf; p < &sel->cmdbuf[sel->cmdoff]; p += UTF8BYTES(*p))
+		sel->cmdpos += gcswidth(p, 1);
 }
 
 void *
@@ -791,6 +887,30 @@ freenames(Nick **names) {
 	}
 }
 
+char *
+gcsfitcols(char *s, int maxw) {
+	int w = 0;
+
+	while(*s) {
+		w += gcswidth(s, 1);
+		if(w > maxw)
+			break;
+		s += UTF8BYTES(*s);
+	}
+	return s;
+}
+
+int
+gcswidth(char *s, int len) {
+	wchar_t *wcs = malloc(len * sizeof(wchar_t) + 1);
+	int n;
+
+	if(!wcs)
+		return -1;
+	n = mbstowcs(wcs, s, len);
+	return n == -1 ? -1 : wcswidth(wcs, n);
+}
+
 Buffer *
 getbuf(char *name) {
 	Buffer *b;
@@ -827,6 +947,7 @@ getkey(void) {
 	case '7': key = KeyHome; break;
 	case '8': key = KeyEnd; break;
 	}
+	readchar();
 	return key;
 }
 
@@ -1405,61 +1526,52 @@ usage(void) {
 
 void
 usrin(void) {
-	Buffer *b;
-	int key = getkey(), i;
+	char graph[4];
+	int key, nb, i;
 
+	key = getkey();
 	for(i = 0; i < LENGTH(keys); ++i) {
 		if(keys[i].key == key) {
 			keys[i].func(&keys[i].arg);
-			while(getkey() != -1); /* discard remaining input */
 			return;
 		}
 	}
-	do {
-		if(key == '\n') {
-			b = sel;
-			logw(sel->cmdbuf);
-			if(sel->cmdbuf[0] == '\0')
-				return;
-			if(sel->cmdbuf[0] == '/') {
-				if(sel->cmdlen == 1)
-					return;
-				histpush(sel->cmdbuf, sel->cmdlen);
-				/* Note: network latency may delay drawings
-				 * causing visual glitches. */
-				parsecmd();
-			}
-			else {
-				histpush(sel->cmdbuf, sel->cmdlen);
-				if(sel == status)
-					bprintf(sel, "Cannot send text here.\n");
-				else if(!srv)
-					bprintf(sel, "Not connected.\n");
-				else
-					privmsg(sel->name, sel->cmdbuf);
-			}
-			if(b == sel) {
-				sel->cmdlen = sel->cmdoff = sel->histlnoff = 0;
-				b->cmdbuf[sel->cmdlen] = '\0';
-				b->need_redraw |= REDRAW_CMDLN;
-			}
+
+	if(key >= KeyFirst && key <= KeyLast)
+		return;
+	if(iscntrl(key)) {
+		while((key = readchar()) != EOF);
+		return;
+	}
+
+	nb = UTF8BYTES(key);
+	graph[0] = key;
+	for(i = 1; i < nb; ++i) {
+		key = readchar();
+		if(key == EOF) {
+			/* TODO: preserve the state and return */
+			while((key = readchar()) == EOF);
 		}
-		else if(isgraph(key) || key == ' ') {
-			if(sel->cmdlen == sizeof sel->cmdbuf - 1) {
-				sel->cmdbuf[sel->cmdoff] = key;
-				sel->need_redraw |= REDRAW_CMDLN;
-				return;
-			}
-			memmove(&sel->cmdbuf[sel->cmdoff+1],
-				&sel->cmdbuf[sel->cmdoff],
-				sel->cmdlen - sel->cmdoff);
-			sel->cmdbuf[sel->cmdoff] = key;
-			sel->cmdbuf[++sel->cmdlen] = '\0';
-			if(sel->cmdlen < sizeof sel->cmdbuf - 1)
-				++sel->cmdoff;
-			sel->need_redraw |= REDRAW_CMDLN;
-		}
-	} while((key = getkey()) != -1);
+		graph[i] = key;
+	}
+
+	/* prevent overflow */
+	if(sel->cmdlen + nb >= sizeof sel->cmdbuf)
+		return;
+
+	/* move nb bytes to the right */
+	memmove(&sel->cmdbuf[sel->cmdoff+nb],
+		&sel->cmdbuf[sel->cmdoff],
+		sel->cmdlen - sel->cmdoff);
+
+	/* insert nb bytes at current offset */
+	memcpy(&sel->cmdbuf[sel->cmdoff], graph, nb);
+
+	sel->cmdlen += nb;
+	sel->cmdbuf[sel->cmdlen] = '\0';
+	sel->cmdoff += nb;
+
+	sel->need_redraw |= REDRAW_CMDLN;
 }
 
 char *
