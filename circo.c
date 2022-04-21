@@ -253,14 +253,14 @@ attach(Buffer *b) {
 int
 bprintf(Buffer *b, char *fmt, ...) {
 	va_list ap;
-	char buf[256 + 80]; /* 80 should be enough for the timestring... */
 	time_t tm;
+	char buf[512];
 	int len = 0;
 
 	tm = time(NULL);
-        len = strftime(buf, sizeof(buf), TIMESTAMP_FORMAT, localtime(&tm));
+        len = strftime(buf, sizeof buf, TIMESTAMP_FORMAT, localtime(&tm));
 	va_start(ap, fmt);
-	vsnprintfc(&buf[len], sizeof(buf) - len - 1, fmt, ap);
+	vsnprintfc(&buf[len], sizeof buf - len - 1, fmt, ap);
 	len += strlen(&buf[len]);
 	va_end(ap);
 	if(!b->size || b->len + len >= b->size)
