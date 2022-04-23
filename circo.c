@@ -741,8 +741,8 @@ drawbar(void) {
 		if(!b->notify)
 			continue;
 
-		snprintfc(tmp, sizeof tmp - tmplen, " %C", colors[NickMention]);
-		tmplen = strlen(&tmp[tmplen]);
+		snprintfc(tmp, sizeof tmp, " %C", colors[NickMention]);
+		tmplen = strlen(tmp);
 		snprintf(&tmp[tmplen], sizeof tmp - tmplen, "%s(%d)", b->name, b->notify);
 		tmplen += gcsfitcols(&tmp[tmplen], cols) - &tmp[tmplen];
 		snprintfc(&tmp[tmplen], sizeof tmp - tmplen, "%..0C");
