@@ -105,6 +105,7 @@ struct Buffer {
 	int histsz, histlnoff;
 	int recvnames;
 	int need_redraw;
+	int notify;
 	Nick *names;
 	Buffer *next;
 };
@@ -153,6 +154,7 @@ void drawbuf(void);
 void drawcmdln(void);
 void *ecalloc(size_t nmemb, size_t size);
 Buffer *getbuf(char *name);
+void focus(Buffer *b);
 void focusnext(const Arg *arg);
 void focusprev(const Arg *arg);
 void freebuf(Buffer *b);
@@ -344,8 +346,8 @@ cmd_close(char *cmd, char *s) {
 }
 
 void
-cmd_exit(char *cmd, char *s) {
-	hangsup();
+cmd_exit(char *cmd, char *msg) {
+	quit(*msg ? msg : QUIT_MESSAGE);
 	running = 0;
 }
 
@@ -719,15 +721,42 @@ draw(void) {
 
 void
 drawbar(void) {
-	char buf[cols+1];
-	int len;
+	Buffer *b;
+	char buf[512], tmp[256];
+	int len, w, tmpw, tmplen;
 
 	if(!(cols && rows))
 		return;
-	len = snprintf(buf, sizeof buf, "%s@%s:%s - %s%s",
-		nick, srv ? host : "", srv ? port : "",
-		sel->name, sel->line ? " [scrolled]" : "");
-	mvprintf(1, 1, "%s%s", buf, len < cols ? CLEARRIGHT : "");
+
+	snprintf(tmp, sizeof tmp, "%s%s%s%s",
+		*nick ? nick : "[nick unset]", srv ? "@" : "",
+		srv ? host : "", sel->line ? " [scrolled]" : "");
+	len = gcsfitcols(tmp, cols) - tmp;
+	if(len >= sizeof buf)
+		return;
+	snprintf(buf, sizeof buf, "%.*s", len, tmp);
+	w = gcswidth(buf, len - 1); /* -1 for null byte */
+
+	for(b = buffers; b; b = b->next) {
+		if(!b->notify)
+			continue;
+
+		snprintfc(tmp, sizeof tmp - tmplen, " %C", colors[NickMention]);
+		tmplen = strlen(&tmp[tmplen]);
+		snprintf(&tmp[tmplen], sizeof tmp - tmplen, "%s(%d)", b->name, b->notify);
+		tmplen += gcsfitcols(&tmp[tmplen], cols) - &tmp[tmplen];
+		snprintfc(&tmp[tmplen], sizeof tmp - tmplen, "%..0C");
+		tmplen += strlen(&tmp[tmplen]);
+
+		tmpw = gcswidth(tmp, tmplen - 1);
+		if(len + tmplen >= sizeof buf)
+			break;
+		snprintf(&buf[len], sizeof buf - len, "%s", tmp);
+		len += tmplen;
+		w += tmpw;
+	}
+
+	mvprintf(1, 1, "%s%s", buf, w < cols ? CLEARRIGHT : "");
 }
 
 void
@@ -839,14 +868,21 @@ ecalloc(size_t nmemb, size_t size) {
 }
 
 void
+focus(Buffer *b) {
+	sel = b;
+	sel->need_redraw |= REDRAW_ALL;
+	if(b->notify)
+		b->notify = 0;
+}
+
+void
 focusnext(const Arg *arg) {
 	Buffer *nb;
 
 	nb = sel->next ? sel->next : buffers;
 	if(nb == sel)
 		return;
-	sel = nb;
-	sel->need_redraw |= REDRAW_ALL;
+	focus(nb);
 }
 
 void 
@@ -865,8 +901,7 @@ focusprev(const Arg *arg) {
 	}
 	if(nb == sel)
 		return;
-	sel = nb;
-	sel->need_redraw |= REDRAW_ALL;
+	focus(nb);
 }
 
 void
@@ -1178,8 +1213,9 @@ privmsg(char *to, char *txt) {
 
 void
 quit(char *msg) {
-	if(srv)
-		sout("QUIT :%s", msg);
+	if(!srv)
+		return;
+	sout("QUIT :%s", msg);
 	hangsup();
 }
 
@@ -1322,14 +1358,21 @@ recv_ping(char *u, char *u2, char *txt) {
 void
 recv_privmsg(char *from, char *to, char *txt) {
 	Buffer *b;
-	int mention;
+	int mention, query;
 
-	if(!strcmp(nick, to))
+	query = !strcmp(nick, to);
+	mention = strstr(txt, nick) != NULL;
+
+	if(query)
 		to = from;
 	b = getbuf(to);
 	if(!b)
 		b = newbuf(to);
-	mention = strstr(txt, nick) != NULL;
+
+	if(b != sel && (mention || query)) {
+		++b->notify;
+		sel->need_redraw |= REDRAW_BAR;
+	}
 	bprintf(b, "%C%s%..0C: %s\n", mention ? colors[NickMention] : colors[NickNormal], from, txt);
 }
 
