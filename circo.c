@@ -1225,7 +1225,11 @@ recv_busynick(char *u, char *u2, char *u3) {
 
 void
 recv_join(char *who, char *chan, char *txt) {
-	Buffer *b = getbuf(chan);
+	Buffer *b;
+
+	if(!*chan)
+		chan = txt;
+	b = getbuf(chan);
 
 	if(!strcmp(who, nick)) {
 		if(!b)
