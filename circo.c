@@ -172,7 +172,6 @@ Nick *nickadd(Buffer *b, char *name);
 void nickdel(Buffer *b, char *name);
 Nick *nickget(Buffer *b, char *name);
 void nicklist(Buffer *b, char *list);
-void nickmdel(char *name);
 void nickmv(char *old, char *new);
 void parsecmd(void);
 void parsesrv(void);
@@ -1125,14 +1124,6 @@ nicklist(Buffer *b, char *list) {
 }
 
 void
-nickmdel(char *name) {
-	Buffer *b;
-
-	for(b = buffers; b; b = b->next)
-		nickdel(b, name);
-}
-
-void
 nickmv(char *old, char *new) {
 	Buffer *b;
 	Nick *n;
@@ -1317,11 +1308,17 @@ recv_namesend(char *host, char *par, char *names) {
 
 void
 recv_nick(char *who, char *u, char *upd) {
+	Buffer *b;
+
 	if(!strcmp(who, nick)) {
 		strcpy(nick, upd);
 		sel->need_redraw |= REDRAW_BAR;
 	}
-	bprintf(sel, "%CNICK%..0C %s: %s\n", colors[IRCMessage], who, upd);
+	for(b = buffers; b; b = b->next) {
+		if(!nickget(b, who))
+			continue;
+		bprintf(b, "%CNICK%..0C %s: %s\n", colors[IRCMessage], who, upd);
+	}
 	nickmv(who, upd);
 }
 
@@ -1378,8 +1375,14 @@ recv_privmsg(char *from, char *to, char *txt) {
 
 void
 recv_quit(char *who, char *u, char *txt) {
-	nickmdel(who);
-	bprintf(sel, "%CQUIT%..0C %s (%s)\n", colors[IRCMessage], who, txt);
+	Buffer *b;
+
+	for(b = buffers; b; b = b->next) {
+		if(!nickget(b, who))
+			continue;
+		bprintf(b, "%CQUIT%..0C %s (%s)\n", colors[IRCMessage], who, txt);
+		nickdel(b, who);
+	}
 }
 
 void
