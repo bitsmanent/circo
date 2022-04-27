@@ -24,6 +24,8 @@
 #include <sys/ioctl.h>
 #include <sys/select.h>
 #include <sys/socket.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <termios.h>
 #include <time.h>
 #include <unistd.h>
@@ -147,7 +149,7 @@ void cmdln_submit(const Arg *arg);
 void cmdln_wdel(const Arg *arg);
 void detach(Buffer *b);
 int dial(char *host, char *port);
-void die(const char *errstr, ...);
+void die(const char *fmt, ...);
 void draw(void);
 void drawbar(void);
 void drawbuf(void);
@@ -196,9 +198,11 @@ void recv_topicrpl(char *usr, char *par, char *txt);
 void resize(int x, int y);
 void scroll(const Arg *arg);
 void setup(void);
+void sigchld(int unused);
 void sigwinch(int unused);
 char *skip(char *s, char c);
 void sout(char *fmt, ...);
+void spawn(const char **cmd);
 void strip_ctrlseqs(char *s);
 void trim(char *s);
 void usage(void);
@@ -697,14 +701,22 @@ dial(char *host, char *port) {
 }
 
 void
-die(const char *errstr, ...) {
+die(const char *fmt, ...) {
 	va_list ap;
-
-	va_start(ap, errstr);
-	vfprintf(stderr, errstr, ap);
+	va_start(ap, fmt);
+	vfprintf(stderr, fmt, ap);
 	va_end(ap);
-	exit(1);
+
+	if (fmt[0] && fmt[strlen(fmt)-1] == ':') {
+		fputc(' ', stderr);
+		perror(NULL);
+	} else {
+		fputc('\n', stderr);
+	}
+
+	exit(0);
 }
+
 
 void
 draw(void) {
@@ -1373,6 +1385,8 @@ recv_privmsg(char *from, char *to, char *txt) {
 	if(b != sel && (mention || query)) {
 		++b->notify;
 		sel->need_redraw |= REDRAW_BAR;
+		if(NOTIFY_SCRIPT)
+			spawn((const char *[]){ NOTIFY_SCRIPT, from, to, txt, NULL });
 	}
 	bprintf(b, "%C%s%..0C: %s\n", mention ? colors[NickMention] : colors[NickNormal], from, txt);
 }
@@ -1498,6 +1512,9 @@ setup(void) {
 	struct sigaction sa;
 	struct winsize ws;
 
+	/* clean up any zombies immediately */
+	sigchld(0);
+
 	setlocale(LC_CTYPE, "");
 	sa.sa_flags = 0;
 	sigemptyset(&sa.sa_mask);
@@ -1511,6 +1528,13 @@ setup(void) {
 	tcsetattr(0, TCSAFLUSH, &ti);
 	ioctl(0, TIOCGWINSZ, &ws);
 	resize(ws.ws_row, ws.ws_col);
+}
+
+void
+sigchld(int unused) {
+	if (signal(SIGCHLD, sigchld) == SIG_ERR)
+		die("can't install SIGCHLD handler:");
+	while(0 < waitpid(-1, NULL, WNOHANG));
 }
 
 void
@@ -1542,6 +1566,17 @@ sout(char *fmt, ...) {
 	vsnprintf(bufout, sizeof bufout, fmt, ap);
 	va_end(ap);
 	fprintf(srv, "%s\r\n", bufout);
+}
+
+void
+spawn(const char **cmd) {
+	if(fork() == 0) {
+		setsid();
+		execvp(cmd[0], (char **)cmd);
+		fprintf(stderr, "%s: execvp %s", argv0, cmd[0]);
+		perror(" failed");
+		exit(0);
+	}
 }
 
 void

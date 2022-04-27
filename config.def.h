@@ -12,6 +12,9 @@ char logfile[64] = "/tmp/circo.log";
 /* Used if no message is specified */
 #define QUIT_MESSAGE "circo"
 
+/* Called for background mentions */
+#define NOTIFY_SCRIPT ""
+
 /* color scheme */
 static int colors[ColorLast][5] = {
 	[NickNormal] = {4, -1},
