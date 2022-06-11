@@ -1329,6 +1329,7 @@ recv_nick(char *who, char *u, char *upd) {
 	if(!strcmp(who, nick)) {
 		strcpy(nick, upd);
 		sel->need_redraw |= REDRAW_BAR;
+		bprintf(sel, "Nick changed to %s\n", upd);
 	}
 	for(b = buffers; b; b = b->next) {
 		if(!nickget(b, who))
