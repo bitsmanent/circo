@@ -183,6 +183,7 @@ int readchar(void);
 void recv_busynick(char *u, char *u2, char *u3);
 void recv_join(char *who, char *chan, char *txt);
 void recv_kick(char *who, char *chan, char *txt);
+void recv_luserme(char *a, char *b, char *c);
 void recv_mode(char *u, char *val, char *u2);
 void recv_motd(char *u, char *u2, char *txt);
 void recv_names(char *usr, char *par, char *txt);
@@ -231,6 +232,7 @@ Message messages[] = {
 	{ "PRIVMSG", recv_privmsg },
 	{ "QUIT",    recv_quit },
 	{ "TOPIC",   recv_topic },
+	{ "255",     recv_luserme },
 	{ "331",     recv_topicrpl }, /* no topic set */
 	{ "332",     recv_topicrpl },
 	{ "353",     recv_names },
@@ -785,7 +787,6 @@ drawbuf(void) {
 	y = 2;
 
 	for(; i < sel->len; ++i) {
-
 		/* control sequences (for colors) */
 		if(sel->data[i] == 0x1b) {
 			while(!isalpha(sel->data[i]))
@@ -1176,7 +1177,7 @@ void
 parsesrv(void) {
 	char *cmd, *usr, *par, *txt;
 
-	//bprintf(status, "DEBUG | < | %s", bufin);
+	//bprintf(sel, "DEBUG | > | %s\n", bufin);
 	cmd = bufin;
 	usr = host;
 	if(!cmd || !*cmd)
@@ -1230,8 +1231,9 @@ readchar(void) {
 
 void
 recv_busynick(char *u, char *u2, char *u3) {
-	bprintf(status, "%s is busy, choose a different /nick\n", nick);
-	*nick = '\0';
+	char *n = skip(u2, ' ');
+
+	bprintf(status, "%s is busy, choose a different /nick\n", n);
 	sel->need_redraw |= REDRAW_BAR;
 }
 
@@ -1275,6 +1277,13 @@ recv_kick(char *oper, char *chan, char *who) {
 		bprintf(b, "%CKICK%..0C %s (%s)\n", colors[IRCMessage], who, oper);
 		nickdel(b, who);
 	}
+}
+
+void
+recv_luserme(char *host, char *mynick, char *info) {
+	bprintf(sel, "DEBUG LUSER: host=%s nick=%s info=%s\n", host, mynick, info);
+	strcpy(nick, mynick);
+	sel->need_redraw |= REDRAW_BAR;
 }
 
 void
@@ -1329,7 +1338,7 @@ recv_nick(char *who, char *u, char *upd) {
 	if(!strcmp(who, nick)) {
 		strcpy(nick, upd);
 		sel->need_redraw |= REDRAW_BAR;
-		bprintf(sel, "Nick changed to %s\n", upd);
+		bprintf(sel, "You're nickname is now %s\n", upd);
 	}
 	for(b = buffers; b; b = b->next) {
 		if(!nickget(b, who))
@@ -1563,7 +1572,6 @@ sout(char *fmt, ...) {
 	va_list ap;
 
 	va_start(ap, fmt);
-	//bprintf(status, "DEBUG | > | %s\n", bufout);
 	vsnprintf(bufout, sizeof bufout, fmt, ap);
 	va_end(ap);
 	fprintf(srv, "%s\r\n", bufout);
