@@ -788,7 +788,7 @@ drawbuf(void) {
 
 	for(; i < sel->len; ++i) {
 		/* control sequences (for colors) */
-		if(sel->data[i] == 0x1b) {
+		if(sel->data[i] == 0x1B) {
 			while(!isalpha(sel->data[i]))
 				putchar(sel->data[i++]);
 			putchar(sel->data[i]);
@@ -1338,7 +1338,7 @@ recv_nick(char *who, char *u, char *upd) {
 	if(!strcmp(who, nick)) {
 		strcpy(nick, upd);
 		sel->need_redraw |= REDRAW_BAR;
-		bprintf(sel, "You're nickname is now %s\n", upd);
+		bprintf(sel, "You're now known as %s\n", upd);
 	}
 	for(b = buffers; b; b = b->next) {
 		if(!nickget(b, who))
@@ -1594,7 +1594,7 @@ strip_ctrlseqs(char *s) {
 	char *c;
 
 	for(c = s; *c; ++c) {
-		if(*c == 0x1b) {
+		if(*c == 0x1B) {
 			while(*++c && !isalpha(*c));
 			continue;
 		}
