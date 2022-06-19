@@ -417,14 +417,6 @@ cmd_server(char *cmd, char *s) {
 		strncpy(host, t, sizeof host);
 	if(srv)
 		quit(QUIT_MESSAGE);
-	if(!*host) {
-		bprintf(status, "/%s: no host specified.\n", cmd);
-		return;
-	}
-	if(!*port) {
-		bprintf(status, "/%s: no port specified.\n", cmd);
-		return;
-	}
 	bprintf(status, "Connecting to %s:%s...\n", host, port);
 	if((fd = dial(host, port)) < 0) { /* Note: dial() locks. */
 		bprintf(status, "Cannot connect to %s on port %s.\n", host, port);
