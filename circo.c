@@ -1140,8 +1140,15 @@ nicklist(Buffer *b, char *list) {
 
 	for(p = list, np = skip(list, ' '); *p; p = np, np = skip(np, ' ')) {
 		/* skip nick flags */
-		if(!isalnum(*p))
+		switch(*p) {
+		case '+':
+		case '@':
+		case '~':
+		case '%':
+		case '&':
 			++p;
+			break;
+		}
 		/* nick is already in list */
 		if(nickget(b, p))
 			continue;
