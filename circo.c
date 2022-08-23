@@ -175,7 +175,7 @@ void nickdel(Buffer *b, char *name);
 Nick *nickget(Buffer *b, char *name);
 void nicklist(Buffer *b, char *list);
 void nickmv(char *old, char *new);
-void parsecmd(void);
+void parsecmd(char *cmd);
 void parsesrv(void);
 void privmsg(char *to, char *txt);
 void quit(char *msg);
@@ -613,32 +613,35 @@ cmdln_cursor(const Arg *arg) {
 
 void
 cmdln_submit(const Arg *arg) {
-	logw(sel->cmdbuf);
-	logw("\n");
+	char *buf;
+
 	if(sel->cmdbuf[0] == '\0')
 		return;
-	if(sel->cmdbuf[0] == '/') {
-		if(sel->cmdlen == 1)
-			return;
+	buf = ecalloc(1, sel->cmdlen);
+	memcpy(buf, sel->cmdbuf, sel->cmdlen);
+
+	logw(buf);
+	logw("\n");
+
+	sel->cmdlen = sel->cmdoff = sel->histlnoff = 0;
+	sel->cmdbuf[sel->cmdlen] = '\0';
+	sel->need_redraw |= REDRAW_CMDLN;
+
+	if(buf[0] == '/') {
 		histpush(sel->cmdbuf, sel->cmdlen);
-		/* Note: network latency may delay drawings
-		 * causing visual glitches. */
-		parsecmd();
+		/* Note: network latency may cause visual glitches. */
+		parsecmd(buf);
 	}
 	else {
 		histpush(sel->cmdbuf, sel->cmdlen);
-		if(sel == status) {
+		if(sel == status)
 			bprintf(sel, "Cannot send text here.\n");
-			return;
-		}
 		else if(!srv)
 			bprintf(sel, "Not connected.\n");
 		else
 			privmsg(sel->name, sel->cmdbuf);
 	}
-	sel->cmdlen = sel->cmdoff = sel->histlnoff = 0;
-	sel->cmdbuf[sel->cmdlen] = '\0';
-	sel->need_redraw |= REDRAW_CMDLN;
+	free(buf);
 }
 
 void
@@ -882,10 +885,10 @@ ecalloc(size_t nmemb, size_t size) {
 
 void
 focus(Buffer *b) {
-	sel = b;
-	sel->need_redraw |= REDRAW_ALL;
 	if(b->notify)
 		b->notify = 0;
+	sel = b;
+	sel->need_redraw |= REDRAW_ALL;
 }
 
 void
@@ -1161,11 +1164,11 @@ nickmv(char *old, char *new) {
 }
 
 void
-parsecmd(void) {
+parsecmd(char *cmd) {
 	char *p, *tp;
 	int i, len;
 
-	p = &sel->cmdbuf[1];
+	p = &cmd[1]; /* skip the slash */
 	if(!*p)
 		return;
 	tp = p + 1;
@@ -1178,7 +1181,7 @@ parsecmd(void) {
 		}
 	}
 	if(srv)
-		sout("%s %s", p, tp);
+		sout("%s %s", p, tp); /* raw */
 	else
 		bprintf(sel, "/%s: not connected.\n", p);
 }
