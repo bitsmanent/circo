@@ -108,6 +108,7 @@ struct Buffer {
 	int recvnames;
 	int need_redraw;
 	int notify;
+	int totnames;
 	Nick *names;
 	Buffer *next;
 };
@@ -733,9 +734,18 @@ drawbar(void) {
 	if(!(cols && rows))
 		return;
 
-	snprintf(tmp, sizeof tmp, "%s%s%s%s",
-		*nick ? nick : "[nick unset]", srv ? "@" : "",
-		srv ? host : "", sel->line ? " [scrolled]" : "");
+	if(ISCHAN(sel)) {
+		len = snprintf(tmp, sizeof tmp, "%d users in %s",
+			sel->totnames, sel->name);
+	}
+	else {
+		len = snprintf(tmp, sizeof tmp, "%s@%s",
+			*nick ? nick : "[nick unset]",
+			srv ? host : "[offline]");
+	}
+	if(sel->line)
+		snprintf(&tmp[len], sizeof tmp - len, " [scrolled]");
+
 	len = gcsfitcols(tmp, cols) - tmp;
 	if(len >= sizeof buf)
 		return;
@@ -1089,6 +1099,7 @@ nickadd(Buffer *b, char *name) {
 	/* attach */
 	n->next = b->names;
 	b->names = n;
+	++b->totnames;
 	return n;
 }
 
@@ -1104,6 +1115,7 @@ nickdel(Buffer *b, char *name) {
 	for(tn = &b->names; *tn && *tn != n; tn = &(*tn)->next);
 	*tn = n->next;
 	free(n);
+	--b->totnames;
 }
 
 Nick *
@@ -1304,6 +1316,8 @@ recv_names(char *host, char *par, char *names) {
 	}
 	bprintf(sel, "NAMES in %s: %s\n", chan, names);
 	nicklist(b, names); /* keep as last since names is altered by skip() */
+	if(b == sel)
+		b->need_redraw |= REDRAW_ALL;
 }
 
 void
@@ -1352,17 +1366,20 @@ recv_part(char *who, char *chan, char *txt) {
 	/* cmd_close() destroys the buffer before PART is received */
 	if(!b)
 		return;
-	if(strcmp(who, nick)) {
+	if(!strcmp(who, nick)) {
+		detach(b);
+		freebuf(b);
+		if(b == sel) {
+			sel = sel->next ? sel->next : buffers;
+			sel->need_redraw |= REDRAW_ALL;
+		}
+	}
+	else {
 		bprintf(b, "%CPART%..0C %s (%s)\n", colors[IRCMessage], who, txt);
 		nickdel(b, who);
-		return;
+		if(b == sel)
+			sel->need_redraw |= REDRAW_ALL;
 	}
-	if(b == sel) {
-		sel = sel->next ? sel->next : buffers;
-		sel->need_redraw |= REDRAW_ALL;
-	}
-	detach(b);
-	freebuf(b);
 }
 
 void
