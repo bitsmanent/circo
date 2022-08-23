@@ -1363,12 +1363,12 @@ recv_part(char *who, char *chan, char *txt) {
 	if(!b)
 		return;
 	if(!strcmp(who, nick)) {
-		detach(b);
-		freebuf(b);
 		if(b == sel) {
 			sel = sel->next ? sel->next : buffers;
 			sel->need_redraw |= REDRAW_ALL;
 		}
+		detach(b);
+		freebuf(b);
 	}
 	else {
 		bprintf(b, "%CPART%..0C %s (%s)\n", colors[IRCMessage], who, txt);
