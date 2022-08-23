@@ -105,7 +105,6 @@ struct Buffer {
 	int line, nlines, lnoff;
 	int cmdlen, cmdoff, cmdpos;
 	int histsz, histlnoff;
-	int recvnames;
 	int need_redraw;
 	int notify;
 	int totnames;
@@ -1100,6 +1099,8 @@ nickadd(Buffer *b, char *name) {
 	n->next = b->names;
 	b->names = n;
 	++b->totnames;
+	if(b == sel)
+		sel->need_redraw |= REDRAW_BAR;
 	return n;
 }
 
@@ -1116,6 +1117,8 @@ nickdel(Buffer *b, char *name) {
 	*tn = n->next;
 	free(n);
 	--b->totnames;
+	if(b == sel)
+		sel->need_redraw |= REDRAW_BAR;
 }
 
 Nick *
@@ -1136,6 +1139,9 @@ nicklist(Buffer *b, char *list) {
 		/* skip nick flags */
 		if(!isalnum(*p))
 			++p;
+		/* nick is already in list */
+		if(nickget(b, p))
+			continue;
 		nickadd(b, p);
 	}
 }
@@ -1255,13 +1261,10 @@ recv_join(char *who, char *chan, char *txt) {
 		else
 			b->kicked = 0; /* b may only be non-NULL due to this */
 		sel = b;
+		sel->need_redraw = REDRAW_ALL;
 	}
-	else {
-		nickadd(b, who);
-	}
+	nickadd(b, who);
 	bprintf(b, "%CJOIN%..0C %s\n", colors[IRCMessage], who);
-	if(b == sel)
-		b->need_redraw |= REDRAW_ALL;
 }
 
 void
@@ -1310,14 +1313,8 @@ recv_names(char *host, char *par, char *names) {
 
 	if(!b)
 		b = status;
-	if(!b->recvnames) {
-		b->recvnames = 1;
-		freenames(&b->names);
-	}
 	bprintf(sel, "NAMES in %s: %s\n", chan, names);
 	nicklist(b, names); /* keep as last since names is altered by skip() */
-	if(b == sel)
-		b->need_redraw |= REDRAW_ALL;
 }
 
 void
@@ -1327,12 +1324,11 @@ recv_namesend(char *host, char *par, char *names) {
 
 	if(!b)
 		b = status;
-	if(!b->recvnames) {
-		bprintf(sel, "%s: no names\n", chan);
+	if(!b->names) {
+		bprintf(sel, "No names in %s.\n", chan);
 		return;
 	}
-	b->recvnames = 0;
-	/* we don't actually need these */
+	/* we don't actually need these on the status */
 	if(b == status)
 		freenames(&b->names);
 }
@@ -1377,8 +1373,6 @@ recv_part(char *who, char *chan, char *txt) {
 	else {
 		bprintf(b, "%CPART%..0C %s (%s)\n", colors[IRCMessage], who, txt);
 		nickdel(b, who);
-		if(b == sel)
-			sel->need_redraw |= REDRAW_ALL;
 	}
 }
 
