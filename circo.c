@@ -623,17 +623,16 @@ cmdln_submit(const Arg *arg) {
 	logw(buf);
 	logw("\n");
 
+	histpush(sel->cmdbuf, sel->cmdlen);
 	sel->cmdlen = sel->cmdoff = sel->histlnoff = 0;
 	sel->cmdbuf[sel->cmdlen] = '\0';
 	sel->need_redraw |= REDRAW_CMDLN;
 
 	if(buf[0] == '/') {
-		histpush(sel->cmdbuf, sel->cmdlen);
 		/* Note: network latency may cause visual glitches. */
 		parsecmd(buf);
 	}
 	else {
-		histpush(sel->cmdbuf, sel->cmdlen);
 		if(sel == status)
 			bprintf(sel, "Cannot send text here.\n");
 		else if(!srv)
