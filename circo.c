@@ -385,7 +385,7 @@ cmd_quit(char *cmd, char *msg) {
 	}
 	quit(*msg ? msg : QUIT_MESSAGE);
 	for(b = buffers; b; b = b->next)
-		bprintf(b, "Quit.\n");
+		bprintf(b, "Quit (%s)\n", msg);
 }
 
 void
