@@ -624,11 +624,12 @@ cmdln_submit(const Arg *arg) {
 	logw("\n");
 
 	histpush(sel->cmdbuf, sel->cmdlen);
-	sel->cmdlen = sel->cmdoff = sel->histlnoff = 0;
-	sel->cmdbuf[sel->cmdlen] = '\0';
-	sel->need_redraw |= REDRAW_CMDLN;
 
 	if(buf[0] == '/') {
+		sel->cmdlen = sel->cmdoff = sel->histlnoff = 0;
+		sel->cmdbuf[sel->cmdlen] = '\0';
+		sel->need_redraw |= REDRAW_CMDLN;
+
 		/* Note: network latency may cause visual glitches. */
 		parsecmd(buf);
 	}
@@ -639,6 +640,10 @@ cmdln_submit(const Arg *arg) {
 			bprintf(sel, "Not connected.\n");
 		else
 			privmsg(sel->name, sel->cmdbuf);
+
+		sel->cmdlen = sel->cmdoff = sel->histlnoff = 0;
+		sel->cmdbuf[sel->cmdlen] = '\0';
+		sel->need_redraw |= REDRAW_CMDLN;
 	}
 	free(buf);
 }
