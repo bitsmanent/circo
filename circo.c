@@ -1142,6 +1142,8 @@ void
 nicklist(Buffer *b, char *list) {
 	char *p, *np;
 
+	freenames(&b->names);
+	b->totnames = 0;
 	for(p = list, np = skip(list, ' '); *p; p = np, np = skip(np, ' ')) {
 		/* skip nick flags */
 		switch(*p) {
@@ -1153,9 +1155,6 @@ nicklist(Buffer *b, char *list) {
 			++p;
 			break;
 		}
-		/* nick is already in list */
-		if(nickget(b, p))
-			continue;
 		nickadd(b, p);
 	}
 }
