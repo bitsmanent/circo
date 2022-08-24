@@ -382,7 +382,9 @@ cmd_quit(char *cmd, char *msg) {
 		bprintf(sel, "/%s: not connected.\n", cmd);
 		return;
 	}
-	quit(*msg ? msg : QUIT_MESSAGE);
+	if(!*msg)
+		msg = QUIT_MESSAGE;
+	quit(msg);
 	for(b = buffers; b; b = b->next)
 		bprintf(b, "Quit (%s)\n", msg);
 }
