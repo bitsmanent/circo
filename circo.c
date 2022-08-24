@@ -108,6 +108,7 @@ struct Buffer {
 	int need_redraw;
 	int notify;
 	int totnames;
+	int recvnames;
 	Nick *names;
 	Buffer *next;
 };
@@ -1144,8 +1145,6 @@ void
 nicklist(Buffer *b, char *list) {
 	char *p, *np;
 
-	freenames(&b->names);
-	b->totnames = 0;
 	for(p = list, np = skip(list, ' '); *p; p = np, np = skip(np, ' ')) {
 		/* skip nick flags */
 		switch(*p) {
@@ -1329,6 +1328,11 @@ recv_names(char *host, char *par, char *names) {
 	if(!b)
 		b = status;
 	bprintf(sel, "NAMES in %s: %s\n", chan, names);
+	if(!b->recvnames) {
+		freenames(&b->names);
+		b->totnames = 0;
+		b->recvnames = 1;
+	}
 	nicklist(b, names); /* keep as last since names is altered by skip() */
 }
 
@@ -1346,6 +1350,7 @@ recv_namesend(char *host, char *par, char *names) {
 	/* we don't actually need these on the status */
 	if(b == status)
 		freenames(&b->names);
+	b->recvnames = 0;
 }
 
 void
