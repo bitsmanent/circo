@@ -31,8 +31,6 @@
 #include <unistd.h>
 #include <wchar.h>
 
-#include "printfc.h"
-
 #include "arg.h"
 char *argv0;
 
@@ -61,6 +59,19 @@ char *argv0;
 #define CURPOS          "\33[%d;%dH"
 #define CURSON          "\33[?25h"
 #define CURSOFF         "\33[?25l"
+/* colors */
+#define COLFG           "\33[38;5;%dm"
+#define COLBG           "\33[48;5;%dm"
+#define ATTR            "\33[%dm"
+#define COLRST          "\33[0m"
+
+/* UI colors and attributes */
+#define UI_BYTE         0x01
+#define UI_SET(X)       UI_BYTE, X
+#define UI_RST          UI_BYTE, -1
+#define UI_WRAP(A,B)    UI_SET(B), A, UI_RST
+#define UI_FMT          "%c%c"
+#define _C_             UI_FMT
 
 #if defined CTRL && defined _AIX
   #undef CTRL
@@ -132,7 +143,9 @@ typedef struct {
 /* function declarations */
 void attach(Buffer *b);
 int bprintf(Buffer *b, char *fmt, ...);
+int bprintf_prefixed(Buffer *b, char *fmt, ...);
 int bufinfo(char *buf, int len, int val, int act);
+int bvprintf(Buffer *b, char *fmt, va_list ap);
 void cleanup(void);
 void cmd_close(char *cmd, char *s);
 void cmd_exit(char *cmd, char *s);
@@ -199,17 +212,16 @@ void recv_topic(char *who, char *chan, char *txt);
 void recv_topicrpl(char *usr, char *par, char *txt);
 void resize(int x, int y);
 void scroll(const Arg *arg);
+void setui(int index);
 void setup(void);
 void sigchld(int unused);
 void sigwinch(int unused);
 char *skip(char *s, char c);
 void sout(char *fmt, ...);
 void spawn(const char **cmd);
-void strip_ctrlseqs(char *s);
 void trim(char *s);
 void usage(void);
 void usrin(void);
-int utf8len(char *s, size_t sz);
 char *wordleft(char *str, int offset, int *size);
 
 /* variables */
@@ -261,32 +273,34 @@ attach(Buffer *b) {
 int
 bprintf(Buffer *b, char *fmt, ...) {
 	va_list ap;
-	time_t tm;
-	char buf[512];
+	int len;
+
+	va_start(ap, fmt);
+	len = bvprintf(b, fmt, ap);
+	va_end(ap);
+	return len;
+}
+
+int
+bprintf_prefixed(Buffer *b, char *fmt, ...) {
+	va_list ap;
+	time_t t;
+	struct tm *tm;
+	char buf[64];
 	int len = 0;
 
-	tm = time(NULL);
-        len = strftime(buf, sizeof buf, TIMESTAMP_FORMAT, localtime(&tm));
+	if(*prefix_format) {
+		t = time(NULL);
+		tm = localtime(&t);
+		len = strftime(buf, sizeof buf, prefix_format, tm);
+		if(!len)
+			len = strftime(buf, sizeof buf, "%T | ", tm); /* fallback */
+		buf[len] = '\0';
+		len = bprintf(b, "%s", buf);
+	}
 	va_start(ap, fmt);
-	vsnprintfc(&buf[len], sizeof buf - len - 1, fmt, ap);
-	len += strlen(&buf[len]);
+	len += bvprintf(b, fmt, ap);
 	va_end(ap);
-	if(!b->size || b->len + len >= b->size)
-		if(!(b->data = realloc(b->data, b->size += len + 256)))
-			die("realloc()\n");
-	memcpy(&b->data[b->len], buf, len);
-	b->len += len;
-	b->nlines = bufinfo(b->data, b->len, 0, TotalLines);
-	sel->need_redraw |= REDRAW_BUFFER;
-
-	/* It's easy to just logw() in bprintf() so we can log
-	 * anything in a single place. Though this force us to:
-	 * - log data in the same format as the actual UI, and
-	 * - strip control sequences (colors) from the buffer.
-	 * Apart from this all should be fine. */
-	strip_ctrlseqs(buf);
-	logw(buf);
-
 	return len;
 }
 
@@ -317,6 +331,30 @@ bufinfo(char *buf, int len, int val, int act) {
 	return (act == TotalLines ? y : 0) - 1;
 }
 
+int
+bvprintf(Buffer *b, char *fmt, va_list ap) {
+	va_list ap2;
+	int len;
+
+	va_copy(ap2, ap);
+	len = vsnprintf(&b->data[b->len], b->size - b->len, fmt, ap);
+	if(len >= b->size - b->len) {
+		b->size += len + 1;
+		b->data = realloc(b->data, b->size);
+		if(!b->data)
+			die("realloc():");
+		len = vsnprintf(&b->data[b->len], b->size - b->len, fmt, ap2);
+	}
+	va_end(ap2);
+	if(len < 0)
+		return -1;
+	logw(&b->data[b->len]); /* log anything going to the buffer */
+	b->len += len;
+	b->nlines = bufinfo(b->data, b->len, 0, TotalLines);
+	b->need_redraw |= REDRAW_BUFFER;
+	return len;
+}
+
 void
 cleanup(void) {
 	Buffer *b;
@@ -334,11 +372,11 @@ cmd_close(char *cmd, char *s) {
 
 	b = *s ? getbuf(s) : sel;
 	if(!b) {
-		bprintf(status, "/%s: %s: unknown buffer.\n", cmd, s);
+		bprintf_prefixed(status, "/%s: %s: unknown buffer.\n", cmd, s);
 		return;
 	}
 	if(b == status) {
-		bprintf(status, "/%s: cannot close the status.\n", cmd);
+		bprintf_prefixed(status, "/%s: cannot close the status.\n", cmd);
 		return;
 	}
 	if(srv && ISCHAN(b) && !b->kicked)
@@ -362,14 +400,14 @@ cmd_msg(char *cmd, char *s) {
 	char *to, *txt;
 
 	if(!srv) {
-		bprintf(sel, "/%s: not connected.\n", cmd);
+		bprintf_prefixed(sel, "/%s: not connected.\n", cmd);
 		return;
 	}
 	trim(s);
 	to = s;
 	txt = skip(to, ' ');
 	if(!(*to && *txt)) {
-		bprintf(sel, "Usage: /%s <channel or user> <text>\n", cmd);
+		bprintf_prefixed(sel, "Usage: /%s <channel or user> <text>\n", cmd);
 		return;
 	}
 	privmsg(to, txt);
@@ -380,14 +418,16 @@ cmd_quit(char *cmd, char *msg) {
 	Buffer *b;
 
 	if(!srv) {
-		bprintf(sel, "/%s: not connected.\n", cmd);
+		bprintf_prefixed(sel, "/%s: not connected.\n", cmd);
 		return;
 	}
 	if(!*msg)
 		msg = QUIT_MESSAGE;
 	quit(msg);
 	for(b = buffers; b; b = b->next)
-		bprintf(b, "Quit (%s)\n", msg);
+		if(b != status)
+			bprintf_prefixed(b, "Quit (%s)\n", msg);
+	bprintf_prefixed(status, "Quitted.\n");
 }
 
 void
@@ -395,7 +435,7 @@ cmd_rejoinall(char *cmd, char *s) {
 	Buffer *b;
 
 	if(!srv) {
-		bprintf(sel, "/%s: not connected.\n", cmd);
+		bprintf_prefixed(sel, "/%s: not connected.\n", cmd);
 		return;
 	}
 	for(b = buffers; b; b = b->next)
@@ -420,9 +460,9 @@ cmd_server(char *cmd, char *s) {
 		strncpy(host, t, sizeof host);
 	if(srv)
 		quit(QUIT_MESSAGE);
-	bprintf(status, "Connecting to %s:%s...\n", host, port);
+	bprintf_prefixed(status, "Connecting to %s:%s...\n", host, port);
 	if((fd = dial(host, port)) < 0) { /* Note: dial() locks. */
-		bprintf(status, "Cannot connect to %s on port %s.\n", host, port);
+		bprintf_prefixed(status, "Cannot connect to %s on port %s.\n", host, port);
 		return;
 	}
 	srv = fdopen(fd, "r+");
@@ -437,14 +477,14 @@ cmd_topic(char *cmd, char *s) {
 	char *chan, *txt;
 
 	if(!srv) {
-		bprintf(sel, "/%s: not connected.\n", cmd);
+		bprintf_prefixed(sel, "/%s: not connected.\n", cmd);
 		return;
 	}
 	if(!*s) {
 		if(ISCHAN(sel))
 			sout("TOPIC %s", sel->name);
 		else
-			bprintf(sel, "/%s: %s in not a channel.\n", cmd, sel->name);
+			bprintf_prefixed(sel, "/%s: %s in not a channel.\n", cmd, sel->name);
 		return;
 	}
 	if(ISCHANPFX(*s)) {
@@ -457,7 +497,7 @@ cmd_topic(char *cmd, char *s) {
 	}
 	else {
 		if(sel == status) {
-			bprintf(sel, "Usage: /%s [channel] [text]\n", cmd);
+			bprintf_prefixed(sel, "Usage: /%s [channel] [text]\n", cmd);
 			return;
 		}
 		chan = sel->name;
@@ -627,7 +667,6 @@ cmdln_submit(const Arg *arg) {
 	logw("\n");
 
 	histpush(sel->cmdbuf, sel->cmdlen);
-
 	if(buf[0] == '/') {
 		sel->cmdlen = sel->cmdoff = sel->histlnoff = 0;
 		sel->cmdbuf[sel->cmdlen] = '\0';
@@ -638,12 +677,11 @@ cmdln_submit(const Arg *arg) {
 	}
 	else {
 		if(sel == status)
-			bprintf(sel, "Cannot send text here.\n");
+			bprintf_prefixed(sel, "Cannot send text here.\n");
 		else if(!srv)
-			bprintf(sel, "Not connected.\n");
+			bprintf_prefixed(sel, "Not connected.\n");
 		else
 			privmsg(sel->name, sel->cmdbuf);
-
 		sel->cmdlen = sel->cmdoff = sel->histlnoff = 0;
 		sel->cmdbuf[sel->cmdlen] = '\0';
 		sel->need_redraw |= REDRAW_CMDLN;
@@ -737,50 +775,36 @@ draw(void) {
 void
 drawbar(void) {
 	Buffer *b;
-	char buf[512], tmp[256];
-	int len, w, tmpw, tmplen;
+	char buf[512];
+	int x = 1, len = 0;
 
 	if(!(cols && rows))
 		return;
 
-	if(ISCHAN(sel)) {
-		len = snprintf(tmp, sizeof tmp, "%d users in %s",
-			sel->totnames, sel->name);
-	}
-	else {
-		len = snprintf(tmp, sizeof tmp, "%s@%s",
-			*nick ? nick : "[nick unset]",
-			srv ? host : "[offline]");
-	}
+	if(ISCHAN(sel))
+		len += snprintf(buf, sizeof buf, "%d users in %s", sel->totnames, sel->name);
+	else
+		len += snprintf(buf, sizeof buf, "%s@%s",
+			*nick ? nick : "[nick unset]", srv ? host : "[offline]");
 	if(sel->line)
-		snprintf(&tmp[len], sizeof tmp - len, " [scrolled]");
+		len += snprintf(&buf[len], sizeof buf - len, " [scrolled]");
 
-	len = gcsfitcols(tmp, cols) - tmp;
-	if(len >= sizeof buf)
-		return;
-	snprintf(buf, sizeof buf, "%.*s", len, tmp);
-	w = gcswidth(buf, len - 1); /* -1 for null byte */
+	len = gcsfitcols(buf, cols - x + 1) - buf;
+	mvprintf(x, 1, "%.*s", len, buf);
+	x += gcswidth(buf, len);
 
 	for(b = buffers; b; b = b->next) {
 		if(!b->notify)
 			continue;
-
-		snprintfc(tmp, sizeof tmp, " %C", colors[NickMention]);
-		tmplen = strlen(tmp);
-		snprintf(&tmp[tmplen], sizeof tmp - tmplen, "%s(%d)", b->name, b->notify);
-		tmplen += gcsfitcols(&tmp[tmplen], cols) - &tmp[tmplen];
-		snprintfc(&tmp[tmplen], sizeof tmp - tmplen, "%..0C");
-		tmplen += strlen(&tmp[tmplen]);
-
-		tmpw = gcswidth(tmp, tmplen - 1);
-		if(len + tmplen >= sizeof buf)
-			break;
-		snprintf(&buf[len], sizeof buf - len, "%s", tmp);
-		len += tmplen;
-		w += tmpw;
+		snprintf(buf, sizeof buf, " %s(%d)", b->name, b->notify);
+		len = gcsfitcols(buf, cols - x + 1) - buf;
+		setui(NickMention);
+		mvprintf(x, 1, "%.*s", len, buf);
+		setui(-1);
+		x += gcswidth(buf, len);
 	}
-
-	mvprintf(1, 1, "%s%s", buf, w < cols ? CLEARRIGHT : "");
+	if(x < cols)
+		mvprintf(x, 1, CLEARRIGHT);
 }
 
 void
@@ -798,11 +822,8 @@ drawbuf(void) {
 	y = 2;
 
 	for(; i < sel->len; ++i) {
-		/* control sequences (for colors) */
-		if(sel->data[i] == 0x1B) {
-			while(!isalpha(sel->data[i]))
-				putchar(sel->data[i++]);
-			putchar(sel->data[i]);
+                if(sel->data[i] == UI_BYTE) {
+			setui(sel->data[++i]);
 			continue;
 		}
 
@@ -1194,14 +1215,14 @@ parsecmd(char *cmd) {
 	if(srv)
 		sout("%s %s", p, tp); /* raw */
 	else
-		bprintf(sel, "/%s: not connected.\n", p);
+		bprintf_prefixed(sel, "/%s: not connected.\n", p);
 }
 
 void
 parsesrv(void) {
 	char *cmd, *usr, *par, *txt;
 
-	//bprintf(sel, "DEBUG | > | %s\n", bufin);
+	//bprintf_prefixed(sel, "DEBUG | > | %s\n", bufin);
 	cmd = bufin;
 	usr = host;
 	if(!cmd || !*cmd)
@@ -1226,7 +1247,7 @@ parsesrv(void) {
 		}
 	}
 	par = skip(par, ' ');
-	bprintf(sel, "%s %s\n", par, txt);
+	bprintf_prefixed(sel, "%s %s\n", par, txt);
 }
 
 void
@@ -1235,7 +1256,7 @@ privmsg(char *to, char *txt) {
 	
 	if(!b)
 		b = isalpha(*to) ? newbuf(to) : sel;
-	bprintf(b, "%s: %s\n", nick, txt);
+	bprintf_prefixed(b, "%s: %s\n", nick, txt);
 	sout("PRIVMSG %s :%s", to, txt);
 }
 
@@ -1257,7 +1278,7 @@ void
 recv_busynick(char *u, char *u2, char *u3) {
 	char *n = skip(u2, ' ');
 
-	bprintf(status, "%s is busy, choose a different /nick\n", n);
+	bprintf_prefixed(status, "%s is busy, choose a different /nick\n", n);
 	sel->need_redraw |= REDRAW_BAR;
 }
 
@@ -1278,7 +1299,7 @@ recv_join(char *who, char *chan, char *txt) {
 		sel->need_redraw = REDRAW_ALL;
 	}
 	nickadd(b, who);
-	bprintf(b, "%CJOIN%..0C %s\n", colors[IRCMessage], who);
+	bprintf_prefixed(b, _C_"%s"_C_" %s\n", UI_WRAP("JOIN", IRCMessage), who);
 }
 
 void
@@ -1292,17 +1313,17 @@ recv_kick(char *oper, char *chan, char *who) {
 	if(!strcmp(who, nick)) {
 		b->kicked = 1;
 		freenames(&b->names); /* we don't need this anymore */
-		bprintf(b, "You got kicked from %s\n", chan);
+		bprintf_prefixed(b, "You got kicked from %s\n", chan);
 	}
 	else {
-		bprintf(b, "%CKICK%..0C %s (%s)\n", colors[IRCMessage], who, oper);
+		bprintf_prefixed(b, _C_"%s"_C_" %s (%s)\n", UI_WRAP("KICK", IRCMessage), who, oper);
 		nickdel(b, who);
 	}
 }
 
 void
 recv_luserme(char *host, char *mynick, char *info) {
-	bprintf(sel, "DEBUG LUSER: host=%s nick=%s info=%s\n", host, mynick, info);
+	//bprintf_prefixed(sel, "DEBUG LUSER: host=%s nick=%s info=%s\n", host, mynick, info);
 	strcpy(nick, mynick);
 	sel->need_redraw |= REDRAW_BAR;
 }
@@ -1317,7 +1338,7 @@ recv_mode(char *u, char *val, char *u2) {
 
 void
 recv_motd(char *u, char *u2, char *txt) {
-	bprintf(status, "%s\n", txt);
+	bprintf_prefixed(status, "%s\n", txt);
 }
 
 void
@@ -1327,7 +1348,6 @@ recv_names(char *host, char *par, char *names) {
 
 	if(!b)
 		b = status;
-	bprintf(sel, "NAMES in %s: %s\n", chan, names);
 	if(!b->recvnames) {
 		freenames(&b->names);
 		b->totnames = 0;
@@ -1339,18 +1359,20 @@ recv_names(char *host, char *par, char *names) {
 void
 recv_namesend(char *host, char *par, char *names) {
 	char *chan = skip(par, ' ');
-	Buffer *b = getbuf(chan);
+	Buffer *b = getbuf(chan), *tb;
+	Nick *n;
 
-	if(!b)
-		b = status;
+	b->recvnames = 0;
 	if(!b->names) {
-		bprintf(sel, "No names in %s.\n", chan);
+		bprintf_prefixed(sel, "No names in %s.\n", chan);
 		return;
 	}
-	/* we don't actually need these on the status */
-	if(b == status)
-		freenames(&b->names);
-	b->recvnames = 0;
+
+	tb = sel; /* keep writing on the target buffer even if focus change */
+	bprintf_prefixed(tb, _C_"%s"_C_" in %s:", UI_WRAP("NAMES", IRCMessage), chan);
+	for(n = b->names; n; n = n->next)
+		bprintf(tb, " %s", n->name);
+	bprintf(tb, "\n");
 }
 
 void
@@ -1360,19 +1382,19 @@ recv_nick(char *who, char *u, char *upd) {
 	if(!strcmp(who, nick)) {
 		strcpy(nick, upd);
 		sel->need_redraw |= REDRAW_BAR;
-		bprintf(sel, "You're now known as %s\n", upd);
+		bprintf_prefixed(sel, "You're now known as %s\n", upd);
 	}
 	for(b = buffers; b; b = b->next) {
 		if(!nickget(b, who))
 			continue;
-		bprintf(b, "%CNICK%..0C %s: %s\n", colors[IRCMessage], who, upd);
+		bprintf_prefixed(b, _C_"%s"_C_" %s: %s\n", UI_WRAP("NICK", IRCMessage), who, upd);
 	}
 	nickmv(who, upd);
 }
 
 void
 recv_notice(char *who, char *u, char *txt) {
-	bprintf(sel, "%CNOTICE%..0C %s: %s\n", colors[IRCMessage], who, txt);
+	bprintf_prefixed(sel, _C_"%s"_C_" %s: %s\n", UI_WRAP("NOTICE", IRCMessage), who, txt);
 }
 
 void
@@ -1391,7 +1413,7 @@ recv_part(char *who, char *chan, char *txt) {
 		freebuf(b);
 	}
 	else {
-		bprintf(b, "%CPART%..0C %s (%s)\n", colors[IRCMessage], who, txt);
+		bprintf_prefixed(b, _C_"%s"_C_" %s (%s)\n", UI_WRAP("PART", IRCMessage), who, txt);
 		nickdel(b, who);
 	}
 }
@@ -1421,7 +1443,7 @@ recv_privmsg(char *from, char *to, char *txt) {
 		if(NOTIFY_SCRIPT)
 			spawn((const char *[]){ NOTIFY_SCRIPT, from, to, txt, NULL });
 	}
-	bprintf(b, "%C%s%..0C: %s\n", mention ? colors[NickMention] : colors[NickNormal], from, txt);
+	bprintf_prefixed(b, _C_"%s"_C_": %s\n", UI_WRAP(from, mention ? NickMention : NickNormal), txt);
 }
 
 void
@@ -1431,20 +1453,20 @@ recv_quit(char *who, char *u, char *txt) {
 	for(b = buffers; b; b = b->next) {
 		if(!nickget(b, who))
 			continue;
-		bprintf(b, "%CQUIT%..0C %s (%s)\n", colors[IRCMessage], who, txt);
+		bprintf_prefixed(b, _C_"%s"_C_" %s (%s)\n", UI_WRAP("QUIT", IRCMessage), who, txt);
 		nickdel(b, who);
 	}
 }
 
 void
 recv_topic(char *who, char *chan, char *txt) {
-	bprintf(getbuf(chan), "%s changed topic to %s\n", who, txt);
+	bprintf_prefixed(getbuf(chan), "%s changed topic to %s\n", who, txt);
 }
 
 void
 recv_topicrpl(char *usr, char *par, char *txt) {
 	char *chan = skip(par, ' ');
-	bprintf(sel, "Topic on %s is %s\n", chan, txt);
+	bprintf_prefixed(sel, "Topic on %s is %s\n", chan, txt);
 }
 
 void
@@ -1488,7 +1510,7 @@ run(void) {
 				if(time(NULL) - trespond >= 300) {
 					hangsup();
 					for(b = buffers; b; b = b->next)
-						bprintf(b, "Connection timeout.\n");
+						bprintf_prefixed(b, "Connection timeout.\n");
 				}
 				else
 					sout("PING %s", host);
@@ -1499,7 +1521,7 @@ run(void) {
 				if(fgets(bufin, sizeof bufin, srv) == NULL) {
 					hangsup();
 					for(b = buffers; b; b = b->next)
-						bprintf(b, "Remote host closed connection.\n");
+						bprintf_prefixed(b, "Remote host closed connection.\n");
 				}
 				else {
 					trespond = time(NULL);
@@ -1537,6 +1559,28 @@ scroll(const Arg *arg) {
 		sel->line = 0;
 	sel->lnoff = bufinfo(sel->data, sel->len, sel->line, LineToOffset);
 	sel->need_redraw |= (REDRAW_BUFFER | REDRAW_BAR);
+}
+
+void
+setui(int index) {
+	int *color, i;
+
+	if(index == -1) {
+		printf(COLRST);
+		return;
+	}
+	color = colors[index];
+	if(!color)
+		return;
+	i = 0;
+	while(color[i] != -1) {
+		switch(i) {
+		case 0: printf(COLFG, color[i]); break;
+		case 1: printf(COLBG, color[i]); break;
+		default: printf(ATTR, color[i]); break;
+		}
+		++i;
+	}
 }
 
 void
@@ -1609,21 +1653,6 @@ spawn(const char **cmd) {
 		perror(" failed");
 		exit(0);
 	}
-}
-
-void
-strip_ctrlseqs(char *s) {
-	int i = 0;
-	char *c;
-
-	for(c = s; *c; ++c) {
-		if(*c == 0x1B) {
-			while(*++c && !isalpha(*c));
-			continue;
-		}
-		s[i++] = *c;
-	}
-	s[i] = '\0';
 }
 
 void

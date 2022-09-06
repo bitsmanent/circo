@@ -6,8 +6,8 @@ char port[8] = "6667";
 char nick[32] = {0}; /* 0 means getenv("USER") */
 char logfile[64] = "/tmp/circo.log";
 
-/* Timestamp format; see strftime(3). */
-#define TIMESTAMP_FORMAT "%T | "
+/* passed to strftime(3) */
+static char prefix_format[] = "%T | ";
 
 /* Used if no message is specified */
 #define QUIT_MESSAGE "circo"
