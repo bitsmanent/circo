@@ -86,6 +86,11 @@ enum { KeyFirst = -999, KeyUp, KeyDown, KeyRight, KeyLeft, KeyHome, KeyEnd, KeyD
 enum { LineToOffset, OffsetToLine, TotalLines }; /* bufinfo() flags */
 
 enum {
+	/* indexes must be non-zero or they will be interpreted as NUL byte
+	 * when put after the UI_BYTE causing for example logging to break.
+	 * This is workaround, a proper solution will be applied soon. */
+	ColorSkipZero,
+
 	NickNormal,
 	NickMention,
 	IRCMessage,
