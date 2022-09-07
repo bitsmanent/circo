@@ -66,7 +66,7 @@ char *argv0;
 #define COLRST          "\33[0m"
 
 /* UI colors and attributes */
-#define UI_BYTE         0x01
+#define UI_BYTE         0x00 /* NUL is not allowed in messages */
 #define UI_SET(X)       UI_BYTE, X
 #define UI_RST          UI_BYTE, -1
 #define UI_WRAP(A,B)    UI_SET(B), A, UI_RST
