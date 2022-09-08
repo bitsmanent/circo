@@ -70,7 +70,7 @@ char *argv0;
 #define UI_SET(X)       UI_BYTE, X
 #define UI_RST          UI_BYTE, -1
 #define UI_WRAP(A,B)    UI_SET(B), A, UI_RST
-#define UI_FMT          "%c%c"
+#define UI_FMT          "%c%d"
 #define _C_             UI_FMT
 
 #if defined CTRL && defined _AIX
@@ -86,11 +86,6 @@ enum { KeyFirst = -999, KeyUp, KeyDown, KeyRight, KeyLeft, KeyHome, KeyEnd, KeyD
 enum { LineToOffset, OffsetToLine, TotalLines }; /* bufinfo() flags */
 
 enum {
-	/* indexes must be non-zero or they will be interpreted as NUL byte
-	 * when put after the UI_BYTE causing for example logging to break.
-	 * This is workaround, a proper solution will be applied soon. */
-	ColorSkipZero,
-
 	NickNormal,
 	NickMention,
 	IRCMessage,
@@ -814,6 +809,7 @@ drawbar(void) {
 
 void
 drawbuf(void) {
+	char *endp;
 	int x, y, c, i, nb, nx;
 
 	if(!(cols && rows && sel->len))
@@ -828,7 +824,9 @@ drawbuf(void) {
 
 	for(; i < sel->len; ++i) {
                 if(sel->data[i] == UI_BYTE) {
-			setui(sel->data[++i]);
+			c = strtol(&sel->data[++i], &endp, 10);
+			i += endp - &sel->data[i] - 1;
+			setui(c);
 			continue;
 		}
 
