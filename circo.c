@@ -812,13 +812,14 @@ drawbuf(void) {
 	int x, y, c, i, nb, nx;
 	char *endp;
 
-	if(!(cols && rows && sel->len))
+	if(!(cols && rows))
 		return;
+
 	x = rows - 2;
 	y = sel->nlines - x;
 	i = sel->line
 		? sel->lnoff
-		: bufinfo(sel->data, sel->len, 1 + (sel->nlines > x ? y : 0), LineToOffset);
+		: sel->len ? bufinfo(sel->data, sel->len, 1 + (sel->nlines > x ? y : 0), LineToOffset) : 0;
 	x = 1;
 	y = 2;
 
@@ -1760,8 +1761,8 @@ main(int argc, char *argv[]) {
 	setup();
 	if(*logfile)
 		logp = fopen(logfile, "a");
-	sel = status = newbuf("status");
 	setbuf(stdout, NULL);
+	sel = status = newbuf("status");
 	sel->need_redraw = REDRAW_ALL;
 	printf(CLEAR);
 	draw();
