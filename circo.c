@@ -212,7 +212,6 @@ void recv_topic(char *who, char *chan, char *txt);
 void recv_topicrpl(char *usr, char *par, char *txt);
 void resize(int x, int y);
 void scroll(const Arg *arg);
-void setui(int index);
 void setup(void);
 void sigchld(int unused);
 void sigwinch(int unused);
@@ -220,6 +219,7 @@ char *skip(char *s, char c);
 void sout(char *fmt, ...);
 void spawn(const char **cmd);
 void trim(char *s);
+int uiset(char *buf, int index);
 void usage(void);
 void usrin(void);
 char *wordleft(char *str, int offset, int *size);
@@ -798,9 +798,9 @@ drawbar(void) {
 			continue;
 		snprintf(buf, sizeof buf, " %s(%d)", b->name, b->notify);
 		len = gcsfitcols(buf, cols - x + 1) - buf;
-		setui(NickMention);
+		uiset(NULL, NickMention);
 		mvprintf(x, 1, "%.*s", len, buf);
-		setui(-1);
+		uiset(NULL, -1);
 		x += gcswidth(buf, len);
 	}
 	if(x < cols)
@@ -809,8 +809,8 @@ drawbar(void) {
 
 void
 drawbuf(void) {
-	char *endp;
 	int x, y, c, i, nb, nx;
+	char *endp;
 
 	if(!(cols && rows && sel->len))
 		return;
@@ -826,7 +826,7 @@ drawbuf(void) {
                 if(sel->data[i] == UI_BYTE) {
 			c = strtol(&sel->data[++i], &endp, 10);
 			i += endp - &sel->data[i] - 1;
-			setui(c);
+			uiset(NULL, c);
 			continue;
 		}
 
@@ -1565,28 +1565,6 @@ scroll(const Arg *arg) {
 }
 
 void
-setui(int index) {
-	int *color, i;
-
-	if(index == -1) {
-		printf(COLRST);
-		return;
-	}
-	color = colors[index];
-	if(!color)
-		return;
-	i = 0;
-	while(color[i] != -1) {
-		switch(i) {
-		case 0: printf(COLFG, color[i]); break;
-		case 1: printf(COLBG, color[i]); break;
-		default: printf(ATTR, color[i]); break;
-		}
-		++i;
-	}
-}
-
-void
 setup(void) {
 	struct termios ti;
 	struct sigaction sa;
@@ -1666,6 +1644,30 @@ trim(char *s) {
 	while(isspace(*e) && e > s)
 		e--;
 	*(e + 1) = '\0';
+}
+
+int
+uiset(char *buf, int index) {
+	int *color, i, len = 0, n;
+	char *p;
+
+	if(index == -1)
+		return buf ? sprintf(buf, COLRST) : printf(COLRST);
+	color = colors[index];
+	if(!color)
+		return -1;
+	for(i = 0; color[i] != -1; ++i) {
+		switch(i) {
+		case 0:  p = COLFG; break;
+		case 1:  p = COLBG; break;
+		default: p = ATTR;  break;
+		}
+		n = buf ? sprintf(&buf[len], p, color[i]) : printf(p, color[i]);
+		if(n < 0)
+			return -1;
+		len += n;
+	}
+	return len;
 }
 
 void
