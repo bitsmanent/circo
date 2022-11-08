@@ -784,8 +784,9 @@ drawbar(void) {
 	if(ISCHAN(sel))
 		len += snprintf(buf, sizeof buf, "%d users in %s", sel->totnames, sel->name);
 	else
-		len += snprintf(buf, sizeof buf, "%s@%s",
-			*nick ? nick : "[nick unset]", srv ? host : "[offline]");
+		len += snprintf(buf, sizeof buf, "%s@%s:%s (%s)",
+			*nick ? nick : "[nick unset]", host, port,
+			srv ? "online" : "offline");
 	if(sel->line)
 		len += snprintf(&buf[len], sizeof buf - len, " [scrolled]");
 
