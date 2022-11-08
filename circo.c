@@ -79,6 +79,7 @@ char *argv0;
 #ifndef CTRL
   #define CTRL(k)   ((k) & 0x1F)
 #endif
+#define ALT(k)      ((k) + (161 - 'a'))
 #define CTRL_ALT(k) ((k) + (129 - 'a'))
 
 /* enums */
@@ -172,6 +173,7 @@ void *ecalloc(size_t nmemb, size_t size);
 Buffer *getbuf(char *name);
 void focus(Buffer *b);
 void focusnext(const Arg *arg);
+void focusnum(const Arg *arg);
 void focusprev(const Arg *arg);
 void freebuf(Buffer *b);
 void freenames(Nick **names);
@@ -918,6 +920,8 @@ ecalloc(size_t nmemb, size_t size) {
 
 void
 focus(Buffer *b) {
+	if(!b)
+		return;
 	if(b->notify)
 		b->notify = 0;
 	sel = b;
@@ -932,6 +936,17 @@ focusnext(const Arg *arg) {
 	if(nb == sel)
 		return;
 	focus(nb);
+}
+
+void
+focusnum(const Arg *arg) {
+	Buffer *b;
+	int i = arg->i;
+
+	for(b = buffers; b; b = b->next)
+		if(--i < 0)
+			break;
+	focus(b);
 }
 
 void 
