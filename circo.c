@@ -1134,6 +1134,7 @@ newbuf(char *name) {
 	Buffer *b;
 
 	b = ecalloc(1, sizeof(Buffer));
+	b->need_redraw = REDRAW_ALL;
 	strncpy(b->name, name, sizeof b->name);
 	attach(b);
 	return b;
@@ -1790,7 +1791,6 @@ main(int argc, char *argv[]) {
 		logp = fopen(logfile, "a");
 	setbuf(stdout, NULL);
 	sel = status = newbuf("status");
-	sel->need_redraw = REDRAW_ALL;
 	printf(CLEAR);
 	draw();
 	run();
