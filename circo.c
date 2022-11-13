@@ -163,7 +163,7 @@ void cmdln_cursor(const Arg *arg);
 void cmdln_submit(const Arg *arg);
 void cmdln_wdel(const Arg *arg);
 void detach(Buffer *b);
-int dial(char *host, char *port);
+int dial(char *host, char *port, int flags);
 void die(const char *fmt, ...);
 void draw(void);
 void drawbar(void);
@@ -214,6 +214,7 @@ void recv_topic(char *who, char *chan, char *txt);
 void recv_topicrpl(char *usr, char *par, char *txt);
 void resize(int x, int y);
 void scroll(const Arg *arg);
+void sendident(void);
 void setup(void);
 void sigchld(int unused);
 void sigwinch(int unused);
@@ -234,6 +235,7 @@ char bufout[4096];
 struct termios origti;
 time_t trespond;
 int running = 1;
+int online = 0;
 int rows, cols;
 
 Message messages[] = {
@@ -462,15 +464,12 @@ cmd_server(char *cmd, char *s) {
 		strncpy(host, t, sizeof host);
 	if(srv)
 		quit(QUIT_MESSAGE);
-	bprintf_prefixed(status, "Connecting to %s:%s...\n", host, port);
-	if((fd = dial(host, port)) < 0) { /* Note: dial() locks. */
+	if((fd = dial(host, port, SOCK_NONBLOCK)) < 0) {
 		bprintf_prefixed(status, "Cannot connect to %s on port %s.\n", host, port);
 		return;
 	}
 	srv = fdopen(fd, "r+");
 	setbuf(srv, NULL);
-	sout("NICK %s", nick);
-	sout("USER %s localhost %s :%s", nick, host, nick);
 	sel->need_redraw |= REDRAW_BAR;
 }
 
@@ -721,7 +720,7 @@ detach(Buffer *b) {
 }
 
 int
-dial(char *host, char *port) {
+dial(char *host, char *port, int flags) {
 	static struct addrinfo hints;
 	struct addrinfo *res, *r;
 	int srvfd;
@@ -732,9 +731,9 @@ dial(char *host, char *port) {
 	if(getaddrinfo(host, port, &hints, &res) != 0)
 		return -1;
 	for(r = res; r; r = r->ai_next) {
-		if((srvfd = socket(r->ai_family, r->ai_socktype, r->ai_protocol)) == -1)
+		if((srvfd = socket(r->ai_family, r->ai_socktype | flags, r->ai_protocol)) == -1)
 			continue;
-		if(connect(srvfd, r->ai_addr, r->ai_addrlen) == 0)
+		if(connect(srvfd, r->ai_addr, r->ai_addrlen) == 0 || errno == EINPROGRESS)
 			break;
 		close(srvfd);
 	}
@@ -788,7 +787,7 @@ drawbar(void) {
 	else
 		len += snprintf(buf, sizeof buf, "%s@%s:%s (%s)",
 			*nick ? nick : "[nick unset]", host, port,
-			srv ? "online" : "offline");
+			srv ? (online ? "online" : "connecting...") : "offline");
 	if(sel->line)
 		len += snprintf(&buf[len], sizeof buf - len, " [scrolled]");
 
@@ -1056,6 +1055,8 @@ hangsup(void) {
 		return;
 	fclose(srv);
 	srv = NULL;
+	online = 0;
+	sel->need_redraw |= REDRAW_BAR;
 }
 
 void
@@ -1538,6 +1539,10 @@ run(void) {
 		}
 		else {
 			if(srv && FD_ISSET(fileno(srv), &rd)) {
+				if(!online) {
+					online = 1;
+					sendident();
+				}
 				if(fgets(bufin, sizeof bufin, srv) == NULL) {
 					hangsup();
 					for(b = buffers; b; b = b->next)
@@ -1579,6 +1584,12 @@ scroll(const Arg *arg) {
 		sel->line = 0;
 	sel->lnoff = bufinfo(sel->data, sel->len, sel->line, LineToOffset);
 	sel->need_redraw |= (REDRAW_BUFFER | REDRAW_BAR);
+}
+
+void
+sendident(void) {
+	sout("NICK %s", nick);
+	sout("USER %s localhost %s :%s", nick, host, nick);
 }
 
 void
