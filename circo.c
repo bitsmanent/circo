@@ -1384,6 +1384,8 @@ recv_namesend(char *host, char *par, char *names) {
 	Buffer *b = getbuf(chan), *tb;
 	Nick *n;
 
+	if(!b)
+		b = status;
 	b->recvnames = 0;
 	if(!b->names) {
 		bprintf_prefixed(sel, "No names in %s.\n", chan);
