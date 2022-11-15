@@ -163,6 +163,7 @@ void cmdln_cursor(const Arg *arg);
 void cmdln_submit(const Arg *arg);
 void cmdln_wdel(const Arg *arg);
 void detach(Buffer *b);
+void destroy(Buffer *b);
 int dial(char *host, char *port, int flags);
 void die(const char *fmt, ...);
 void draw(void);
@@ -385,12 +386,7 @@ cmd_close(char *cmd, char *s) {
 	}
 	if(srv && ISCHAN(b) && !b->kicked)
 		sout("PART :%s", b->name); /* Note: you may be not in that channel */
-	if(b == sel) {
-		sel = sel->next ? sel->next : buffers;
-		sel->need_redraw |= REDRAW_ALL;
-	}
-	detach(b);
-	freebuf(b);
+	destroy(b);
 }
 
 void
@@ -709,6 +705,17 @@ cmdln_wdel(const Arg *arg) {
 	sel->cmdbuf[sel->cmdlen] = '\0';
 	sel->cmdoff = i;
 	sel->need_redraw |= REDRAW_CMDLN;
+}
+
+void
+destroy(Buffer *b) {
+	if(b == sel) {
+		sel = sel->next ? sel->next : buffers;
+		sel->need_redraw |= REDRAW_ALL;
+	}
+	detach(b);
+	freebuf(b);
+
 }
 
 void
@@ -1425,16 +1432,11 @@ void
 recv_part(char *who, char *chan, char *txt) {
 	Buffer *b = getbuf(chan);
 
-	/* cmd_close() destroys the buffer before PART is received */
+	/* cmd_close() destroy the buffer before PART is received */
 	if(!b)
 		return;
 	if(!strcmp(who, nick)) {
-		if(b == sel) {
-			sel = sel->next ? sel->next : buffers;
-			sel->need_redraw |= REDRAW_ALL;
-		}
-		detach(b);
-		freebuf(b);
+		destroy(b);
 	}
 	else {
 		bprintf_prefixed(b, _C_"%s"_C_" %s (%s)\n", UI_WRAP("PART", IRCMessage), who, txt);
