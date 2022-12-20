@@ -767,7 +767,6 @@ die(const char *fmt, ...) {
 	exit(0);
 }
 
-
 void
 draw(void) {
 	printf(CURSOFF);
@@ -920,7 +919,7 @@ ecalloc(size_t nmemb, size_t size) {
 	void *p;
 
 	if(!(p = calloc(nmemb, size)))
-		die("Cannot allocate memory.\n");
+		die("Cannot allocate memory.");
 	return p;
 }
 
@@ -1111,7 +1110,7 @@ histpush(char *buf, int len) {
 		++sel->histsz;
 	i = sel->histsz;
 	if(!(sel->hist = realloc(sel->hist, (sel->histsz += len + 1))))
-		die("Cannot realloc\n");
+		die("Cannot realloc");
 	memcpy(&sel->hist[i], buf, len);
 	sel->hist[i + len] = '\0';
 }
@@ -1529,7 +1528,7 @@ run(void) {
 		if(n < 0) {
 			if(errno == EINTR)
 				continue;
-			die("select()\n");
+			die("select()");
 		}
 		if(n == 0) {
 			if(srv) {
@@ -1705,7 +1704,7 @@ uiset(char *buf, int index) {
 
 void
 usage(void) {
-	die("Usage: %s [-v] [-hpnl <arg>]\n", argv0);
+	die("Usage: %s [-v] [-hpnl <arg>]", argv0);
 }
 
 void
@@ -1784,7 +1783,7 @@ main(int argc, char *argv[]) {
 	case 'p': strncpy(port, EARGF(usage()), sizeof port); break;
 	case 'n': strncpy(nick, EARGF(usage()), sizeof nick); break;
 	case 'l': strncpy(logfile, EARGF(usage()), sizeof logfile); break;
-	case 'v': die("circo-"VERSION"\n");
+	case 'v': die("circo-"VERSION);
 	default: usage();
 	} ARGEND;
 
