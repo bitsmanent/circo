@@ -1545,9 +1545,9 @@ run(void) {
 			if(srv && FD_ISSET(fileno(srv), &rd)) {
 				if(fgets(bufin, sizeof bufin, srv) == NULL) {
 					for(b = buffers; b; b = b->next)
-						bprintf_prefixed(b, online
-							? "Remote host closed connection."
-							: "Cannot connect to the host.");
+						bprintf_prefixed(b, "%s.\n", online
+							? "Remote host closed connection"
+							: "Cannot connect to the host");
 					hangsup();
 				}
 				else {
