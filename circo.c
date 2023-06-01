@@ -1543,18 +1543,20 @@ run(void) {
 		}
 		else {
 			if(srv && FD_ISSET(fileno(srv), &rd)) {
-				if(!online) {
-					online = 1;
-					sendident();
-				}
 				if(fgets(bufin, sizeof bufin, srv) == NULL) {
-					hangsup();
 					for(b = buffers; b; b = b->next)
-						bprintf_prefixed(b, "Remote host closed connection.\n");
+						bprintf_prefixed(b, online
+							? "Remote host closed connection."
+							: "Cannot connect to the host.");
+					hangsup();
 				}
 				else {
 					trespond = time(NULL);
 					parsesrv();
+					if(!online) {
+						online = 1;
+						sendident();
+					}
 				}
 			}
 			if(FD_ISSET(0, &rd))
