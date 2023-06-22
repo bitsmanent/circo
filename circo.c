@@ -222,6 +222,7 @@ void sigwinch(int unused);
 char *skip(char *s, char c);
 void sout(char *fmt, ...);
 void spawn(const char **cmd);
+void stripformats(char *s);
 void trim(char *s);
 int uiset(char *buf, int index);
 void usage(void);
@@ -1265,8 +1266,14 @@ parsesrv(void) {
 	skip(cmd, '\r');
 	par = skip(cmd, ' ');
 	txt = skip(par, ':');
+
 	trim(txt);
 	trim(par);
+
+	/* IRC formatting may be supported at some point in the future. For now
+	 * just strip that out to keep things simple. */
+	stripformats(txt);
+
 	for(int i = 0; i < LENGTH(messages); ++i) {
 		if(!strcmp(messages[i].name, cmd)) {
 			if(messages[i].func)
@@ -1543,6 +1550,8 @@ run(void) {
 		}
 		else {
 			if(srv && FD_ISSET(fileno(srv), &rd)) {
+				/* TODO: we should keep reading until CRLF is found. Only at that
+				 * point parsesrv(), sendident(), etc. should be called. */
 				if(fgets(bufin, sizeof bufin, srv) == NULL) {
 					for(b = buffers; b; b = b->next)
 						bprintf_prefixed(b, "%s.\n", online
@@ -1667,6 +1676,33 @@ spawn(const char **cmd) {
 		fprintf(stderr, "%s: execvp %s", argv0, cmd[0]);
 		perror(" failed");
 		exit(0);
+	}
+}
+
+/* https://modern.ircdocs.horse/formatting.html */
+void
+stripformats(char *s) {
+	char *p = s;
+
+	while(*p) {
+		switch(*p) {
+		case 0x02: /* bold */
+		case 0x1D: /* italic */
+		case 0x1F: /* underline */
+		case 0x1E: /* strikethrough */
+		case 0x11: /* monospace */
+		case 0x16: /* reverse */
+			++p;
+			break;
+		case 0x03: /* colors */
+		case 0x04: /* hex colors */
+			/* TODO: these need actual parsing. To be implemented soon. */
+			break;
+		}
+
+		*s = *p;
+		++p;
+		++s;
 	}
 }
 
