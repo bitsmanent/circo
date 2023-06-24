@@ -1692,6 +1692,7 @@ stripformats(char *s) {
 		case 0x1E: /* strikethrough */
 		case 0x11: /* monospace */
 		case 0x16: /* reverse */
+		case 0x0F: /* reset */
 			++p;
 			break;
 		case 0x03: /* colors */
@@ -1700,9 +1701,7 @@ stripformats(char *s) {
 			break;
 		}
 
-		*s = *p;
-		++p;
-		++s;
+		*s++ = *p++;
 	}
 }
 
