@@ -1696,13 +1696,17 @@ stripformats(char *s) {
 			++p;
 			break;
 		case 0x03: /* colors */
-		case 0x04: /* hex colors */
-			/* TODO: these need actual parsing. To be implemented soon. */
+			if(isdigit(*++p) && isdigit(*++p))
+				++p;
+			if(*p == ',' && isdigit(*++p) && isdigit(*++p))
+				++p;
+			break;
+		default:
+			*s++ = *p++;
 			break;
 		}
-
-		*s++ = *p++;
 	}
+	*s++ = *p;
 }
 
 void
