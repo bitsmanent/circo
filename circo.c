@@ -1400,13 +1400,13 @@ recv_namesend(char *host, char *par, char *names) {
 	if(!b)
 		b = status;
 	b->recvnames = 0;
-	if(!b->names) {
+	if(!b->totnames) {
 		bprintf_prefixed(sel, "No names in %s.\n", chan);
 		return;
 	}
 
 	tb = sel; /* keep writing on the target buffer even if focus change */
-	bprintf_prefixed(tb, _C_"%s"_C_" in %s:", UI_WRAP("NAMES", IRCMessage), chan);
+	bprintf_prefixed(tb, _C_"%s"_C_" in %s (%d):", UI_WRAP("NAMES", IRCMessage), chan, b->totnames);
 	for(n = b->names; n; n = n->next)
 		bprintf(tb, " %s", n->name);
 	bprintf(tb, "\n");
