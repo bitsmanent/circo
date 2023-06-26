@@ -1394,7 +1394,7 @@ recv_names(char *host, char *par, char *names) {
 void
 recv_namesend(char *host, char *par, char *names) {
 	char *chan = skip(par, ' ');
-	Buffer *b = getbuf(chan), *tb;
+	Buffer *b = getbuf(chan);
 	Nick *n;
 
 	if(!b)
@@ -1405,11 +1405,10 @@ recv_namesend(char *host, char *par, char *names) {
 		return;
 	}
 
-	tb = sel; /* keep writing on the target buffer even if focus change */
-	bprintf_prefixed(tb, _C_"%s"_C_" in %s (%d):", UI_WRAP("NAMES", IRCMessage), chan, b->totnames);
+	bprintf_prefixed(sel, _C_"%s"_C_" in %s (%d):", UI_WRAP("NAMES", IRCMessage), chan, b->totnames);
 	for(n = b->names; n; n = n->next)
-		bprintf(tb, " %s", n->name);
-	bprintf(tb, "\n");
+		bprintf(sel, " %s", n->name);
+	bprintf(sel, "\n");
 }
 
 void
