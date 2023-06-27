@@ -149,7 +149,6 @@ int bufinfo(char *buf, int len, int val, int act);
 int bvprintf(Buffer *b, char *fmt, va_list ap);
 void cleanup(void);
 void cmd_close(char *cmd, char *s);
-void cmd_exit(char *cmd, char *s);
 void cmd_msg(char *cmd, char *s);
 void cmd_quit(char *cmd, char *s);
 void cmd_rejoinall(char *cmd, char *s);
@@ -391,12 +390,6 @@ cmd_close(char *cmd, char *s) {
 }
 
 void
-cmd_exit(char *cmd, char *msg) {
-	quit(*msg ? msg : QUIT_MESSAGE);
-	running = 0;
-}
-
-void
 cmd_msg(char *cmd, char *s) {
 	char *to, *txt;
 
@@ -416,19 +409,9 @@ cmd_msg(char *cmd, char *s) {
 
 void
 cmd_quit(char *cmd, char *msg) {
-	Buffer *b;
-
-	if(!srv) {
-		bprintf_prefixed(sel, "/%s: not connected.\n", cmd);
-		return;
-	}
-	if(!*msg)
-		msg = QUIT_MESSAGE;
-	quit(msg);
-	for(b = buffers; b; b = b->next)
-		if(b != status)
-			bprintf_prefixed(b, "Quit (%s)\n", msg);
-	bprintf_prefixed(status, "Quitted.\n");
+	if(srv)
+		quit(*msg ? msg : QUIT_MESSAGE);
+	running = 0;
 }
 
 void

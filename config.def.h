@@ -27,7 +27,6 @@ static Command commands[] = {
 	/* command     function */
 	{ "close",     cmd_close },
 	{ "connect",   cmd_server },
-	{ "exit",      cmd_exit },
 	{ "msg",       cmd_msg },
 	{ "quit",      cmd_quit },
 	{ "server",    cmd_server },
