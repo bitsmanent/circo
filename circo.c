@@ -1216,8 +1216,7 @@ nickmv(char *old, char *new) {
 	Nick *n;
 
 	for(b = buffers; b; b = b->next) {
-		n = nickget(b, old);
-		if(!n)
+		if(!(ISCHAN(b) && (n = nickget(b, old))))
 			continue;
 		strncpy(n->name, new, sizeof n->name - 1);
 		n->len = strlen(n->name);
@@ -1251,7 +1250,6 @@ void
 parsesrv(void) {
 	char *cmd, *usr, *par, *txt;
 
-	//bprintf_prefixed(sel, "DEBUG | > | %s\n", bufin);
 	cmd = bufin;
 	usr = host;
 	if(!cmd || !*cmd)
@@ -1325,6 +1323,7 @@ recv_join(char *who, char *chan, char *txt) {
 		chan = txt;
 	b = getbuf(chan);
 
+	/* don't call nickadd() for ourselves since nicks list gets updated when join */
 	if(!strcmp(who, nick)) {
 		if(!b)
 			b = newbuf(chan);
@@ -1333,7 +1332,8 @@ recv_join(char *who, char *chan, char *txt) {
 		sel = b;
 		sel->need_redraw = REDRAW_ALL;
 	}
-	nickadd(b, who);
+	else
+		nickadd(b, who);
 	bprintf_prefixed(b, _C_"%s"_C_" %s\n", UI_WRAP("JOIN", IRCMessage), who);
 }
 
@@ -1358,7 +1358,6 @@ recv_kick(char *oper, char *chan, char *who) {
 
 void
 recv_luserme(char *host, char *mynick, char *info) {
-	//bprintf_prefixed(sel, "DEBUG LUSER: host=%s nick=%s info=%s\n", host, mynick, info);
 	strcpy(nick, mynick);
 	sel->need_redraw |= REDRAW_BAR;
 }
@@ -1421,7 +1420,7 @@ recv_nick(char *who, char *u, char *upd) {
 		bprintf_prefixed(sel, "You're now known as %s\n", upd);
 	}
 	for(b = buffers; b; b = b->next) {
-		if(!nickget(b, who))
+		if(!(ISCHAN(b) && nickget(b, who)))
 			continue;
 		bprintf_prefixed(b, _C_"%s"_C_" %s: %s\n", UI_WRAP("NICK", IRCMessage), who, upd);
 	}
@@ -1482,7 +1481,7 @@ recv_quit(char *who, char *u, char *txt) {
 	Buffer *b;
 
 	for(b = buffers; b; b = b->next) {
-		if(!nickget(b, who))
+		if(!(ISCHAN(b) && nickget(b, who)))
 			continue;
 		bprintf_prefixed(b, _C_"%s"_C_" %s (%s)\n", UI_WRAP("QUIT", IRCMessage), who, txt);
 		nickdel(b, who);
