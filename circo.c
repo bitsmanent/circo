@@ -183,7 +183,7 @@ int getkey(void);
 void hangsup(void);
 void history(const Arg *arg);
 void histpush(char *buf, int len);
-void logw(char *txt);
+int logfmt(char *fmt, ...);
 int mvprintf(int x, int y, char *fmt, ...);
 Buffer *newbuf(char *name);
 Nick *nickadd(Buffer *b, char *name);
@@ -304,7 +304,14 @@ bprintf_prefixed(Buffer *b, char *fmt, ...) {
 		len = bprintf(b, "%s", buf);
 	}
 	va_start(ap, fmt);
+
+#ifdef DEBUG
+	int olen = b->len;
 	len += bvprintf(b, fmt, ap);
+	logfmt("%ld DEBUG bvprintf() %s", time(NULL), &b->data[olen]); /* \n is already there from the caller */
+#else
+	len += bvprintf(b, fmt, ap);
+#endif
 	va_end(ap);
 	return len;
 }
@@ -353,7 +360,6 @@ bvprintf(Buffer *b, char *fmt, va_list ap) {
 	va_end(ap2);
 	if(len < 0)
 		return -1;
-	logw(&b->data[b->len]); /* log anything going to the buffer */
 	b->len += len;
 	b->nlines = bufinfo(b->data, b->len, 0, TotalLines);
 	b->need_redraw |= REDRAW_BUFFER;
@@ -641,11 +647,12 @@ cmdln_submit(const Arg *arg) {
 
 	if(sel->cmdbuf[0] == '\0')
 		return;
+
+#ifdef DEBUG
+	logfmt("%ld DEBUG cmdln_submit() %s\n", time(NULL), sel->cmdbuf);
+#endif
 	buf = ecalloc(1, sel->cmdlen);
 	memcpy(buf, sel->cmdbuf, sel->cmdlen);
-
-	logw(buf);
-	logw("\n");
 
 	histpush(sel->cmdbuf, sel->cmdlen);
 	if(buf[0] == '/') {
@@ -781,6 +788,10 @@ drawbar(void) {
 	if(sel->line)
 		len += snprintf(&buf[len], sizeof buf - len, " [scrolled]");
 
+#ifdef DEBUG
+	len += snprintf(&buf[len], sizeof buf - len, " | DEBUG");
+#endif
+
 	len = gcsfitcols(buf, cols - x + 1) - buf;
 	mvprintf(x, 1, "%.*s", len, buf);
 	x += gcswidth(buf, len);
@@ -859,7 +870,7 @@ drawbuf(void) {
 
 void
 drawcmdln(void) {
-	char prompt[64], *buf, *p;
+	char prompt[256], *buf, *p;
 	int s, w; /* size and width */
 	int x = 1, colw = cols;
 
@@ -1099,12 +1110,18 @@ histpush(char *buf, int len) {
 	sel->hist[i + len] = '\0';
 }
 
-void
-logw(char *txt) {
+int
+logfmt(char *fmt, ...) {
+	va_list ap;
+	int len;
+
 	if(!logp)
-		return;
-	fprintf(logp, "%s", txt);
+		return -1;
+	va_start(ap, fmt);
+	len = vfprintf(logp, fmt, ap);
+	va_end(ap);
 	fflush(logp);
+	return len;
 }
 
 int
@@ -1233,6 +1250,9 @@ void
 parsesrv(void) {
 	char *cmd, *usr, *par, *txt;
 
+#ifdef DEBUG
+	logfmt("%ld DEBUG parsesrv(): %s", time(NULL), bufin); /* \n is already there from fgets() */
+#endif
 	cmd = bufin;
 	usr = host;
 	if(!cmd || !*cmd)
@@ -1274,6 +1294,7 @@ privmsg(char *to, char *txt) {
 		b = isalpha(*to) ? newbuf(to) : sel;
 	bprintf_prefixed(b, "%s: %s\n", nick, txt);
 	sout("PRIVMSG %s :%s", to, txt);
+	logfmt("%ld PRIVMSG to %s: %s\n", time(NULL), to, txt);
 }
 
 void
@@ -1318,6 +1339,7 @@ recv_join(char *who, char *chan, char *txt) {
 	else
 		nickadd(b, who);
 	bprintf_prefixed(b, _C_"%s"_C_" %s\n", UI_WRAP("JOIN", IRCMessage), who);
+	logfmt("%ld JOIN %s on %s\n", time(NULL), who, chan);
 }
 
 void
@@ -1337,6 +1359,7 @@ recv_kick(char *oper, char *chan, char *who) {
 		bprintf_prefixed(b, _C_"%s"_C_" %s (%s)\n", UI_WRAP("KICK", IRCMessage), who, oper);
 		nickdel(b, who);
 	}
+	logfmt("%ld KICK %s on %s (%s)\n", time(NULL), who, chan, oper);
 }
 
 void
@@ -1388,9 +1411,13 @@ recv_namesend(char *host, char *par, char *names) {
 	}
 
 	bprintf_prefixed(sel, _C_"%s"_C_" in %s (%d):", UI_WRAP("NAMES", IRCMessage), chan, b->totnames);
-	for(n = b->names; n; n = n->next)
+	logfmt("%ld NAMES %s (%d):", time(NULL), chan, b->totnames);
+	for(n = b->names; n; n = n->next) {
 		bprintf(sel, " %s", n->name);
+		logfmt(" %s", n->name);
+	}
 	bprintf(sel, "\n");
+	logfmt("\n");
 }
 
 void
@@ -1405,14 +1432,16 @@ recv_nick(char *who, char *u, char *upd) {
 	for(b = buffers; b; b = b->next) {
 		if(!(ISCHAN(b) && nickget(b, who)))
 			continue;
-		bprintf_prefixed(b, _C_"%s"_C_" %s: %s\n", UI_WRAP("NICK", IRCMessage), who, upd);
+		bprintf_prefixed(b, _C_"%s"_C_" %s is now %s\n", UI_WRAP("NICK", IRCMessage), who, upd);
 	}
 	nickmv(who, upd);
+	logfmt("%ld NICK %s is now %s\n", time(NULL), who, upd);
 }
 
 void
 recv_notice(char *who, char *u, char *txt) {
 	bprintf_prefixed(sel, _C_"%s"_C_" %s: %s\n", UI_WRAP("NOTICE", IRCMessage), who, txt);
+	logfmt("%ld NOTICE %s: %s\n", time(NULL), who, txt);
 }
 
 void
@@ -1429,6 +1458,7 @@ recv_part(char *who, char *chan, char *txt) {
 		bprintf_prefixed(b, _C_"%s"_C_" %s (%s)\n", UI_WRAP("PART", IRCMessage), who, txt);
 		nickdel(b, who);
 	}
+	logfmt("%ld PART %s from %s (%s)\n", time(NULL), who, chan, txt);
 }
 
 void
@@ -1457,6 +1487,10 @@ recv_privmsg(char *from, char *to, char *txt) {
 			spawn((const char *[]){ NOTIFY_SCRIPT, from, to, txt, NULL });
 	}
 	bprintf_prefixed(b, _C_"%s"_C_": %s\n", UI_WRAP(from, mention ? NickMention : NickNormal), txt);
+	if(query)
+		logfmt("%ld PRIVMSG from %s on %s: %s\n", time(NULL), from, to, txt);
+	else
+		logfmt("%ld PRIVMSG from %s: %s\n", time(NULL), from, txt);
 }
 
 void
@@ -1469,17 +1503,20 @@ recv_quit(char *who, char *u, char *txt) {
 		bprintf_prefixed(b, _C_"%s"_C_" %s (%s)\n", UI_WRAP("QUIT", IRCMessage), who, txt);
 		nickdel(b, who);
 	}
+	logfmt("%ld QUIT %s (%s)\n", time(NULL), who, txt);
 }
 
 void
 recv_topic(char *who, char *chan, char *txt) {
 	bprintf_prefixed(getbuf(chan), "%s changed topic to %s\n", who, txt);
+	logfmt("%ld TOPIC %s (%s): %s\n", time(NULL), chan, who, txt);
 }
 
 void
 recv_topicrpl(char *usr, char *par, char *txt) {
 	char *chan = skip(par, ' ');
-	bprintf_prefixed(sel, "Topic on %s is %s\n", chan, txt);
+
+	bprintf_prefixed(sel, "Topic on %s is %s\n", chan, txt); /* TODO: who set the topic? */
 }
 
 void
@@ -1647,6 +1684,9 @@ sout(char *fmt, ...) {
 	vsnprintf(bufout, sizeof bufout, fmt, ap);
 	va_end(ap);
 	fprintf(srv, "%s\r\n", bufout);
+#ifdef DEBUG
+	logfmt("%ld DEBUG sout() %s\n", time(NULL), bufout);
+#endif
 }
 
 void
